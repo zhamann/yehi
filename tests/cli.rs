@@ -37,7 +37,10 @@ fn still_draws_the_frame() {
 }
 
 #[test]
-fn video_has_every_frame() {
+fn sheet_and_video() {
+    let s = tmp("sheet.jpg");
+    yehi(&["sheet", "examples/hello.json", "-o", s.to_str().unwrap(), "--count", "4"]);
+    assert!(image::open(&s).is_ok());
     let v = tmp("video.mp4");
     let out = yehi(&["video", "examples/hello.json", "-o", v.to_str().unwrap(), "--quality", "draft"]);
     assert!(out.contains("270 frames"), "{out}");
