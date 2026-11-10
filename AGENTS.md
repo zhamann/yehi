@@ -10,6 +10,7 @@ A CLI that renders video from a JSON spec as fast as the machine allows: GPU com
 - `src/gpu.rs`, `src/shaders/`: pipelines, the compositor, YUV/RGBA conversion, and shader-layer compilation.
 - `src/text.rs`: font loading, shaping, the glyph atlas. `src/video.rs`: video-layer decoding. `src/encode.rs`: encoder choice and the ffmpeg command. `src/sheet.rs`: contact sheets.
 - `docs/spec.md`: the spec reference, compiled into the binary as `yehi docs`.
+- `skills/yehi/SKILL.md`: the agent skill.
 
 ## Rules
 
