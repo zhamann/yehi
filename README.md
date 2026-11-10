@@ -16,7 +16,7 @@ A real 64-second 1080x1920 social video (14 scenes of engraved plates, kinetic t
 | `yehi video` (H.264) | 9 s |
 | `yehi video --codec hevc` | 5.3 s |
 | `yehi video --quality draft` | 3.4 s |
-| `yehi still` | under 1 s |
+| `yehi sheet` (12 labeled frames) or `yehi still` | under 1 s |
 
 The compositor alone runs at about 600 frames a second at 1080x1920; the rest is the encoder.
 
@@ -36,6 +36,7 @@ On Linux without a GPU, install a software Vulkan driver (`apt install mesa-vulk
 
 ```bash
 yehi check video.json                 # validate and load everything
+yehi sheet video.json -o sheet.jpg    # evenly spaced frames on one image, labeled with their times
 yehi still video.json 1.5 4 -o stills/
 yehi video video.json -o out.mp4      # --codec h264|hevc|prores, --quality draft|standard|high
 yehi docs                             # the full spec reference
@@ -67,7 +68,7 @@ The CLI is built to be driven by an agent:
 
 - `yehi docs` prints the whole spec, so an agent can learn it from the tool itself.
 - Errors name the field and say what's allowed: `layers[2].layers[0].opacity: unknown function 'easeOut'; available: ...`. Unknown fields are errors, so typos never silently render wrong.
-- `yehi still` renders any frame in a fraction of a second, so checking the work is cheap enough to do every time.
+- `yehi sheet` puts a dozen labeled frames on one image in well under a second, so checking the work is cheap enough to do every time.
 
 ## How it works
 

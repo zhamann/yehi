@@ -4,6 +4,7 @@ A video is one JSON file: the canvas, the timeline, and a list of layers drawn b
 
 ```sh
 yehi check  video.json                      # validate and load everything, render nothing
+yehi sheet  video.json -o sheet.jpg          # 12 evenly spaced frames on one image, labeled with their times
 yehi still  video.json 1.5 4 -o stills/      # full-size PNGs at those times
 yehi video  video.json -o out.mp4            # the video
 ```
@@ -14,7 +15,7 @@ yehi video  video.json -o out.mp4            # the video
 
 1. Write the spec. Paths (images, fonts, masks) are relative to the spec file.
 2. `yehi check` until it passes. Errors name the exact field: `layers[2].layers[0].opacity: unknown function 'easeOut'`.
-3. `yehi still` at the moments that matter, and look at the frames. A still takes a fraction of a second.
+3. `yehi sheet` (or `yehi still` at the moments that matter) and look at the frames. Rendering a sheet takes well under a second.
 4. `yehi video`.
 
 ## The file
@@ -190,4 +191,4 @@ Colors are composited in sRGB-encoded values with premultiplied alpha, the way i
 
 ## Speed
 
-Frames are composited on the GPU (Metal, Vulkan or DX12; a software Vulkan driver works where there's no GPU) and converted to YUV there, so the CPU only copies bytes to the encoder, which is usually the limit. On an Apple M4, a 64-second 1080x1920 video renders in about 9 s with H.264, 5 s with `--codec hevc`, and 3.5 s with `--quality draft`. Loading reads every image and font once, in parallel. Expressions and keyframes cost nothing measurable; a still takes a fraction of a second, so check frames freely.
+Frames are composited on the GPU (Metal, Vulkan or DX12; a software Vulkan driver works where there's no GPU) and converted to YUV there, so the CPU only copies bytes to the encoder, which is usually the limit. On an Apple M4, a 64-second 1080x1920 video renders in about 9 s with H.264, 5 s with `--codec hevc`, and 3.5 s with `--quality draft`. Loading reads every image and font once, in parallel. Expressions and keyframes cost nothing measurable; a sheet or still takes a fraction of a second, so check frames freely.

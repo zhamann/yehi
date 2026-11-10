@@ -4,6 +4,7 @@ mod encode;
 mod expr;
 mod gpu;
 mod scene;
+mod sheet;
 mod spec;
 mod text;
 
@@ -60,6 +61,21 @@ enum Cmd {
         /// A directory (one still_<time>.png per time), or a file name when there is one time.
         #[arg(short, long)]
         out: PathBuf,
+    },
+    /// Render a contact sheet: evenly spaced frames in one image, each labeled with its time.
+    Sheet {
+        spec: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+        /// How many frames.
+        #[arg(long, default_value_t = 12)]
+        count: usize,
+        /// Exact times in seconds instead of evenly spaced ones.
+        #[arg(long, num_args = 1.., value_delimiter = ',')]
+        times: Option<Vec<f64>>,
+        /// Width of each frame in the sheet.
+        #[arg(long, default_value_t = 270)]
+        width: u32,
     },
     /// Validate a spec and load everything it uses, without rendering.
     Check { spec: PathBuf },
@@ -167,6 +183,21 @@ fn run() -> Result<()> {
                 save(&img, &path)?;
                 println!("{}", path.display());
             }
+            Ok(())
+        }
+        Cmd::Sheet { spec, out, count, times, width } => {
+            let comp = spec::load(&spec)?;
+            let mut scene = Scene::load(&comp, Gpu::new()?)?;
+            let times =
+                times.unwrap_or_else(|| (0..count).map(|k| (k as f64 + 0.5) * comp.duration / count as f64).collect());
+            let mut frames = Vec::new();
+            for &t in &times {
+                frames.push((t, still(&mut scene, time_to_frame(&comp, t))?));
+            }
+            let img = sheet::compose(&frames, width);
+            save(&img, &out)?;
+            let list: Vec<String> = times.iter().map(|t| format!("{t:.2}")).collect();
+            println!("{}: frames at {}s", out.display(), list.join(", "));
             Ok(())
         }
     }
