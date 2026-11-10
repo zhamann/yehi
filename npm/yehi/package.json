@@ -1,5 +1,5 @@
 {
-  "name": "yehi",
+  "name": "@zhamann/yehi",
   "description": "Fast GPU video rendering from a JSON spec, built for AI agents",
   "license": "MIT",
   "keywords": ["video", "render", "gpu", "motion-graphics", "agents", "ffmpeg"],

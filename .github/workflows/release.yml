@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag matching Cargo.toml's version (v0.2.0) on a commit in main to build every platform's binary, publish
-# the npm packages (yehi and its yehi-<platform> binaries), and attach the binaries to a GitHub release.
+# the npm packages (@zhamann/yehi and its yehi-<platform> binaries), and attach the binaries to a GitHub release.
 
 on:
   push:
@@ -135,7 +135,7 @@ jobs:
         run: |
           # a prerelease (0.2.0-rc.1) goes out under "next", so "latest" stays on the newest stable release
           tag=latest; case "$VERSION" in *-*) tag=next;; esac
-          # the platform packages first, so yehi never points at a binary that isn't there; skip what's
+          # the platform packages first, so the launcher never points at a binary that isn't there; skip what's
           # already published, so a failed release can be re-run
           for dir in dist/yehi-* dist/yehi; do
             name=$(node -p "require('./$dir/package.json').name")
