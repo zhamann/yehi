@@ -150,7 +150,8 @@ fn video_args(enc: &str, o: &Opts, comp: &Comp) -> Vec<String> {
 }
 
 /// Start ffmpeg reading raw frames from stdin. `audio` is everything to mix in (spec audio and video layers).
-pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts) -> Result<Child> {
+/// `span` is the part of the timeline being rendered, in seconds.
+pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts, span: (f64, f64)) -> Result<Child> {
     let duration = comp.duration;
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-y", "-hide_banner", "-loglevel", "error", "-nostdin"]);
@@ -198,8 +199,11 @@ pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts) -> R
             graph += &format!("[a{k}]");
         }
         graph += &format!(
-            "amix=inputs={}:normalize=0:dropout_transition=0,apad=whole_dur={duration},atrim=end={duration}",
-            audio.len()
+            "amix=inputs={}:normalize=0:dropout_transition=0,apad=whole_dur={},atrim=start={}:end={},asetpts=PTS-STARTPTS",
+            audio.len(),
+            span.1,
+            span.0,
+            span.1
         );
         if let Some(l) = comp.loudness {
             graph += &format!(",loudnorm=I={l}:TP=-1.5:LRA=11,aresample=48000");
@@ -213,7 +217,7 @@ pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts) -> R
         }
     }
     cmd.args(video_args(enc, o, comp));
-    cmd.args(["-t", &duration.to_string()]);
+    cmd.args(["-t", &(span.1 - span.0).to_string()]);
     let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if ext == "mp4" || ext == "mov" || ext == "m4v" {
         cmd.args(["-movflags", "+faststart"]);

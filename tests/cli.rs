@@ -41,15 +41,26 @@ fn sheet_and_video() {
     let s = tmp("sheet.jpg");
     yehi(&["sheet", "examples/hello.json", "-o", s.to_str().unwrap(), "--count", "4"]);
     assert!(image::open(&s).is_ok());
-    let v = tmp("video.mp4");
-    let out = yehi(&["video", "examples/hello.json", "-o", v.to_str().unwrap(), "--quality", "draft"]);
-    assert!(out.contains("270 frames"), "{out}");
+    let v = tmp("part.mp4");
+    let out = yehi(&[
+        "video",
+        "examples/hello.json",
+        "-o",
+        v.to_str().unwrap(),
+        "--start",
+        "1",
+        "--end",
+        "2",
+        "--quality",
+        "draft",
+    ]);
+    assert!(out.contains("30 frames"), "{out}");
     let probe = Command::new("ffprobe")
         .args(["-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames,width,height", "-of", "csv=p=0"])
         .arg(&v)
         .output()
         .unwrap();
-    assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1080,1920,270");
+    assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1080,1920,30");
 }
 
 #[test]

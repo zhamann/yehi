@@ -39,6 +39,7 @@ yehi check video.json                 # validate and load everything
 yehi sheet video.json -o sheet.jpg    # evenly spaced frames on one image, labeled with their times
 yehi still video.json 1.5 4 -o stills/
 yehi video video.json -o out.mp4      # --codec h264|hevc|prores, --quality draft|standard|high
+yehi video video.json -o part.mp4 --start 10 --end 14
 yehi docs                             # the full spec reference
 ```
 
@@ -69,6 +70,7 @@ The CLI is built to be driven by an agent:
 - `yehi docs` prints the whole spec, so an agent can learn it from the tool itself.
 - Errors name the field and say what's allowed: `layers[2].layers[0].opacity: unknown function 'easeOut'; available: ...`. Unknown fields are errors, so typos never silently render wrong.
 - `yehi sheet` puts a dozen labeled frames on one image in well under a second, so checking the work is cheap enough to do every time.
+- Frames are independent, so `--start`/`--end` render any part on its own.
 
 ## How it works
 
@@ -77,7 +79,7 @@ The CLI is built to be driven by an agent:
 - **The GPU does the pixels** ([wgpu](https://wgpu.rs): Metal, Vulkan, DX12), compositing premultiplied color in 16-bit float, then converting to dithered BT.709 YUV 4:2:0 in a compute shader so the CPU only copies 3 MB a frame.
 - **Everything overlaps.** Four frames are in flight: while the GPU draws one, earlier ones are copied back and piped to ffmpeg on another thread, which encodes with VideoToolbox on macOS, NVENC on NVIDIA, or x264/x265 elsewhere.
 
-Because a frame depends only on its time, a render can be split across processes or machines and the parts joined.
+Because a frame depends only on its time, a render can be split across processes or machines and the parts joined; `--start`/`--end` is the building block for that.
 
 ## Development
 

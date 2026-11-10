@@ -7,6 +7,7 @@ yehi check  video.json                      # validate and load everything, rend
 yehi sheet  video.json -o sheet.jpg          # 12 evenly spaced frames on one image, labeled with their times
 yehi still  video.json 1.5 4 -o stills/      # full-size PNGs at those times
 yehi video  video.json -o out.mp4            # the video
+yehi video  video.json -o part.mp4 --start 10 --end 14   # just that part, with its audio
 ```
 
 `yehi video` options: `--codec h264|hevc|prores` (h264), `--quality draft|standard|high` (standard), `--encoder auto|hardware|software|<ffmpeg encoder>` (auto picks the fastest that works here), `--bitrate 12M`, `--no-audio`.
