@@ -1,7 +1,7 @@
 //! Encoding through ffmpeg: frames arrive as raw YUV 4:2:0 on stdin, already converted on the GPU, and the
-//! fastest encoder the machine has turns them into a file.
+//! fastest encoder the machine has turns them into a file. Audio is mixed in the same pass.
 
-use crate::spec::Comp;
+use crate::spec::{Audio, Comp};
 use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use std::path::Path;
@@ -149,8 +149,8 @@ fn video_args(enc: &str, o: &Opts, comp: &Comp) -> Vec<String> {
     a
 }
 
-/// Start ffmpeg reading raw frames from stdin.
-pub fn spawn(out: &Path, comp: &Comp, enc: &str, o: &Opts) -> Result<Child> {
+/// Start ffmpeg reading raw frames from stdin. `audio` is everything to mix in (spec audio and video layers).
+pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts) -> Result<Child> {
     let duration = comp.duration;
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-y", "-hide_banner", "-loglevel", "error", "-nostdin"]);
@@ -169,6 +169,49 @@ pub fn spawn(out: &Path, comp: &Comp, enc: &str, o: &Opts) -> Result<Child> {
         "bt709",
     ]);
     cmd.args(["-s", &format!("{}x{}", comp.width, comp.height), "-r", &comp.fps.to_string(), "-i", "pipe:0"]);
+    for a in audio {
+        if a.looped {
+            cmd.args(["-stream_loop", "-1"]);
+        }
+        cmd.arg("-i").arg(&a.src);
+    }
+    if !audio.is_empty() {
+        let mut graph = String::new();
+        for (k, a) in audio.iter().enumerate() {
+            let dur = a.duration.unwrap_or(duration - a.start).max(0.0);
+            graph += &format!(
+                "[{}:a]atrim=start={}:duration={dur},asetpts=PTS-STARTPTS,aresample=48000,volume={}",
+                k + 1,
+                a.trim,
+                a.volume
+            );
+            if a.fade_in > 0.0 {
+                graph += &format!(",afade=t=in:d={}", a.fade_in);
+            }
+            if a.fade_out > 0.0 {
+                graph += &format!(",afade=t=out:st={}:d={}", (dur - a.fade_out).max(0.0), a.fade_out);
+            }
+            let ms = (a.start.max(0.0) * 1000.0).round() as u64;
+            graph += &format!(",adelay=delays={ms}:all=1[a{k}];");
+        }
+        for k in 0..audio.len() {
+            graph += &format!("[a{k}]");
+        }
+        graph += &format!(
+            "amix=inputs={}:normalize=0:dropout_transition=0,apad=whole_dur={duration},atrim=end={duration}",
+            audio.len()
+        );
+        if let Some(l) = comp.loudness {
+            graph += &format!(",loudnorm=I={l}:TP=-1.5:LRA=11,aresample=48000");
+        }
+        graph += "[aout]";
+        cmd.args(["-filter_complex", &graph, "-map", "0:v", "-map", "[aout]"]);
+        if enc.starts_with("prores") {
+            cmd.args(["-c:a", "pcm_s16le"]);
+        } else {
+            cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+        }
+    }
     cmd.args(video_args(enc, o, comp));
     cmd.args(["-t", &duration.to_string()]);
     let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();

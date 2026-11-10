@@ -17,11 +17,39 @@ struct SpecJson {
     #[serde(default)]
     background: Option<String>,
     #[serde(default)]
+    audio: Vec<AudioJson>,
+    #[serde(default)]
+    loudness: Option<f64>,
+    #[serde(default)]
     layers: Vec<LayerJson>,
     #[serde(default, rename = "$schema")]
     _schema: Option<String>,
     #[serde(default)]
     _comment: Option<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AudioJson {
+    src: String,
+    #[serde(default)]
+    start: f64,
+    #[serde(default)]
+    trim: f64,
+    #[serde(default)]
+    duration: Option<f64>,
+    #[serde(default = "one")]
+    volume: f64,
+    #[serde(default)]
+    fade_in: f64,
+    #[serde(default)]
+    fade_out: f64,
+    #[serde(default, rename = "loop")]
+    looped: bool,
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 #[derive(Deserialize)]
@@ -111,7 +139,22 @@ pub struct Comp {
     pub duration: f64,
     pub frames: u32,
     pub background: [f64; 4],
+    pub audio: Vec<Audio>,
+    pub loudness: Option<f64>,
     pub layers: Vec<Layer>,
+}
+
+/// One audio source placed on the composition's timeline.
+#[derive(Clone, Debug)]
+pub struct Audio {
+    pub src: PathBuf,
+    pub start: f64,
+    pub trim: f64,
+    pub duration: Option<f64>,
+    pub volume: f64,
+    pub fade_in: f64,
+    pub fade_out: f64,
+    pub looped: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -252,6 +295,20 @@ pub fn parse(text: &str, dir: &Path) -> Result<Comp> {
     }
     let mut b = Builder { dir: dir.to_path_buf(), next_id: 0, errors: Vec::new() };
     let layers = b.layers(spec.layers, "layers", spec.duration);
+    let mut audio = Vec::new();
+    for (i, a) in spec.audio.into_iter().enumerate() {
+        let src = b.asset(&a.src, &format!("audio[{i}].src"));
+        audio.push(Audio {
+            src,
+            start: a.start,
+            trim: a.trim,
+            duration: a.duration,
+            volume: a.volume,
+            fade_in: a.fade_in,
+            fade_out: a.fade_out,
+            looped: a.looped,
+        });
+    }
     let background = match spec.background.as_deref() {
         None => [0.0, 0.0, 0.0, 1.0],
         Some(s) => parse_hex(s).map_err(|e| anyhow!("background: {e}"))?,
@@ -266,6 +323,8 @@ pub fn parse(text: &str, dir: &Path) -> Result<Comp> {
         duration: spec.duration,
         frames: (spec.duration * spec.fps).round().max(1.0) as u32,
         background,
+        audio,
+        loudness: spec.loudness,
         layers,
     })
 }
