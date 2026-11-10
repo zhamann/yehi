@@ -58,7 +58,7 @@ A spec:
 }
 ```
 
-Layers are images, text, rects, ellipses, shaders, and groups. Any property can be a number, a math expression of time (`"540 + 20 * sin(t * 3)"`), or keyframes with easing. Text is shaped with kerning and can animate its tracking or each glyph. Layers can be clipped, wiped on, masked, and blended; groups make scenes and can be isolated into their own layer. Shader layers run your WGSL per pixel and can read what's beneath them, for gradients, grain, grades, and anything else procedural. Audio files are mixed in the same pass, optionally normalized to a loudness target.
+Layers are images, videos, text, rects, ellipses, shaders, and groups. Any property can be a number, a math expression of time (`"540 + 20 * sin(t * 3)"`), or keyframes with easing. Text is shaped with kerning and can animate its tracking or each glyph. Layers can be clipped, wiped on, masked, and blended; groups make scenes and can be isolated into their own layer. Shader layers run your WGSL per pixel and can read what's beneath them, for gradients, grain, grades, and anything else procedural. Audio files and video soundtracks are mixed in the same pass, optionally normalized to a loudness target.
 
 [docs/spec.md](docs/spec.md) is the complete reference (`yehi docs` prints it), and [examples/hello.json](examples/hello.json) is a 9-second example using most of it.
 

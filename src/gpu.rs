@@ -393,6 +393,21 @@ impl Gpu {
         self.add_texture(texture)
     }
 
+    pub fn write_rgba8(&self, tex: usize, data: &[u8]) {
+        let t = &self.textures[tex];
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &t.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(t.w * 4), rows_per_image: Some(t.h) },
+            wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+        );
+    }
+
     fn float_texture(&mut self, w: u32, h: u32, label: &str) -> usize {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
