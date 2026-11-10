@@ -52,6 +52,12 @@ enum Cmd {
         /// Leave out the audio.
         #[arg(long)]
         no_audio: bool,
+        /// Render from this time in seconds (a preview of part of the video, or one chunk of a split render).
+        #[arg(long)]
+        start: Option<f64>,
+        /// Render up to this time in seconds.
+        #[arg(long)]
+        end: Option<f64>,
         /// Render without encoding, to measure rendering alone.
         #[arg(long, hide = true)]
         benchmark: bool,
@@ -131,12 +137,18 @@ fn run() -> Result<()> {
             );
             Ok(())
         }
-        Cmd::Video { spec, out, codec, encoder, quality, bitrate, no_audio, benchmark } => {
+        Cmd::Video { spec, out, codec, encoder, quality, bitrate, no_audio, start, end, benchmark } => {
             let t0 = Instant::now();
             let comp = spec::load(&spec)?;
             if comp.width % 8 != 0 {
                 bail!("width must be a multiple of 8 for video output (got {})", comp.width);
             }
+            let first = start.map_or(0, |s| time_to_frame(&comp, s));
+            let last = end.map_or(comp.frames, |e| ((e * comp.fps).round() as u32).min(comp.frames));
+            if last <= first {
+                bail!("--end must come after --start, inside the video's {}s", comp.duration);
+            }
+            let range = first..last;
             let enc = encode::pick(codec, &encoder)?;
             let gpu = Gpu::new()?;
             let mut scene = Scene::load(&comp, gpu)?;
@@ -158,11 +170,12 @@ fn run() -> Result<()> {
                     .stderr(std::process::Stdio::piped())
                     .spawn()?
             } else {
-                encode::spawn(&out, &comp, &audio, &enc, &opts)?
+                let span = (range.start as f64 / comp.fps, range.end as f64 / comp.fps);
+                encode::spawn(&out, &comp, &audio, &enc, &opts, span)?
             };
             let t1 = Instant::now();
-            let n = comp.frames;
-            render_video(&mut scene, child, 0..n)?;
+            let n = range.len() as u32;
+            render_video(&mut scene, child, range)?;
             let secs = t1.elapsed().as_secs_f64();
             println!(
                 "{}: {} frames ({:.2}s of video) in {:.2}s ({:.0} fps), plus {:.2}s loading, with {} on {} ({:?})",
