@@ -142,7 +142,8 @@ jobs:
             if npm view "$name@$VERSION" version >/dev/null 2>&1; then
               echo "$name@$VERSION is already published"
             else
-              npm publish "$dir" --access public --provenance --tag "$tag"
+              # ./ so npm reads it as a folder, not a GitHub user/repo
+              npm publish "./$dir" --access public --provenance --tag "$tag"
             fi
           done
       - name: GitHub release
@@ -163,7 +164,7 @@ jobs:
               tar -czf "assets/$name.tar.gz" -C "$d" .
             fi
           done
-          (cd assets && sha256sum ./* > SHA256SUMS)
+          (cd assets && sha256sum yehi-* > SHA256SUMS)
           pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
           gh release create "$GITHUB_REF_NAME" assets/* --generate-notes $pre \
             || gh release upload "$GITHUB_REF_NAME" assets/* --clobber
