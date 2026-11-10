@@ -8,30 +8,29 @@ It does one thing. There's no editor, no timeline UI, and no browser: a spec goe
 
 ## How fast
 
-A real 64-second 1080x1920 social video (14 scenes of engraved plates, kinetic type, slot reveals, write-ons, camera shake, grain, vignette, a dozen shader passes) on an Apple M4:
+A real 64-second 1080x1920 social video (14 scenes of engraved plates, kinetic type, slot reveals, write-ons, camera shake, grain, vignette, a dozen shader passes; not in this repo) on an Apple M4:
 
 | | Time |
 |---|---|
-| The project's original Python/numpy renderer | 115 s |
 | `yehi video` (H.264) | 9 s |
 | `yehi video --codec hevc` | 5.3 s |
 | `yehi video --quality draft` | 3.4 s |
 | `yehi sheet` (12 labeled frames) or `yehi still` | under 1 s |
 | Linux container, no GPU (software Vulkan), draft | 53 s |
 
-The compositor alone runs at about 600 frames a second at 1080x1920; the rest is the encoder.
+The same video took 115 s with the Python and numpy renderer yehi replaced. The compositor alone runs at about 600 frames a second at 1080x1920; the rest is the encoder. [examples/hello.json](examples/hello.json), 9 seconds, renders in about 1.4 s on the same machine.
 
 ## Install
 
-Run it with npx, which downloads the prebuilt binary for the machine on first use (macOS on Apple silicon or Intel, Linux x64 or arm64 with glibc, Windows x64):
+Run it with npx, which downloads the prebuilt binary for the machine on first use (macOS 11 or later on Apple silicon or Intel, Linux x64 or arm64 with glibc 2.17 or later, Windows x64):
 
 ```bash
 npx yehi video video.json -o out.mp4
 ```
 
-Or install it once with `npm install -g yehi`, or build it from source with [Rust](https://rustup.rs) (`cargo install --path .`).
+Or install it once with `npm install -g yehi`, download a binary from the [releases](https://github.com/zhamann/yehi/releases), or build it from source with [Rust](https://rustup.rs) 1.90 or later (`cargo install --git https://github.com/zhamann/yehi`).
 
-yehi needs [ffmpeg](https://ffmpeg.org) on the PATH (`brew install ffmpeg`, `apt install ffmpeg`, `winget install ffmpeg`), or `YEHI_FFMPEG` and `YEHI_FFPROBE` set to its programs. On Linux without a GPU, also install a software Vulkan driver (`apt install mesa-vulkan-drivers`). The Docker image includes both:
+yehi needs [ffmpeg](https://ffmpeg.org) on the PATH (`brew install ffmpeg`, `apt install ffmpeg`, `winget install ffmpeg`), or `YEHI_FFMPEG` and `YEHI_FFPROBE` set to its programs. On Linux without a GPU, also install a software Vulkan driver (`apt install mesa-vulkan-drivers` or `dnf install mesa-vulkan-drivers`). The Docker image includes both:
 
 ```bash
 docker build -t yehi .
@@ -67,7 +66,7 @@ A spec:
 }
 ```
 
-Layers are images, videos, text, rects, ellipses, shaders, and groups. Any property can be a number, a math expression of time (`"540 + 20 * sin(t * 3)"`), or keyframes with easing. Text is shaped with kerning and can animate its tracking or each glyph. Layers can be clipped, wiped on, masked, and blended; groups make scenes and can be isolated into their own layer. Shader layers run your WGSL per pixel and can read what's beneath them, for gradients, grain, grades, and anything else procedural. Audio files and video soundtracks are mixed in the same pass, optionally normalized to a loudness target.
+Layers are images, videos, text, rects, ellipses, shaders, and groups. Animatable properties (position, scale, rotation, opacity, colors, sizes, clips and more) can be a number, a math expression of time (`"540 + 20 * sin(t * 3)"`), or keyframes with easing. Text is shaped with kerning and can animate its tracking or each glyph. Layers can be clipped, wiped on, masked, and blended; groups make scenes and can be isolated into their own layer. Shader layers run your WGSL per pixel and can read what's beneath them, for gradients, grain, grades, and anything else procedural. Audio files and video soundtracks are mixed in the same pass, optionally normalized to a loudness target.
 
 [docs/spec.md](docs/spec.md) is the complete reference (`yehi docs` prints it), and [examples/hello.json](examples/hello.json) is a 9-second example using most of it.
 
@@ -91,25 +90,10 @@ The CLI is built to be driven by an agent:
 
 Because a frame depends only on its time, a render can be split across processes or machines and the parts joined; `--start`/`--end` is the building block for that.
 
-## Releasing
+## Contributing
 
-Set `version` in `Cargo.toml` and merge that change, then push a matching tag from `main`:
-
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-The release workflow checks the tag matches `Cargo.toml`, runs the CI checks, builds the binary on each platform, publishes `yehi-<platform>` and then `yehi` to npm with provenance, and attaches the binaries to a GitHub release. A prerelease tag like `v0.2.0-rc.1` publishes under npm's `next` tag, so `latest` stays on the newest stable release. It needs an `NPM_TOKEN` secret with permission to publish those packages.
-
-## Development
-
-```bash
-cargo test            # unit tests, plus end-to-end tests that render examples/hello.json (needs a GPU or software Vulkan, and ffmpeg)
-cargo clippy --all-targets
-cargo fmt
-```
+Bug reports and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing, and the project's rules. Report security issues privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## License
 
-[MIT](LICENSE). The example's EB Garamond fonts are under the [SIL Open Font License](examples/fonts/OFL.txt).
+[MIT](LICENSE). The binaries also include Rust crates under their own permissive licenses, listed in the `THIRD-PARTY-LICENSES.txt` that ships with each one. The example's EB Garamond fonts are under the [SIL Open Font License](examples/fonts/OFL.txt).
