@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The release workflow runs these checks before publishing.
+  workflow_call:
 
 permissions:
   contents: read
@@ -23,6 +25,13 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       # renders on the CPU through Mesa's software Vulkan driver
       - run: cargo test
+      - name: npm packages stage and pack
+        run: |
+          mkdir -p artifacts/linux-x64 && cp target/debug/yehi artifacts/linux-x64/
+          node npm/stage.mjs --artifacts artifacts --out dist
+          npm pack ./dist/yehi-linux-x64 ./dist/yehi --dry-run
+          npm install --no-save ./dist/yehi-linux-x64 ./dist/yehi
+          npx yehi check examples/hello.json
 
   macos:
     runs-on: macos-latest

@@ -1,0 +1,113 @@
+name: Release
+
+# Push a tag matching Cargo.toml's version (v0.2.0) to build every platform's binary, publish the npm packages
+# (yehi and its yehi-<platform> binaries), and attach the binaries to a GitHub release.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: v
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME doesn't match Cargo.toml version $v" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [version, checks]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { platform: darwin-arm64, target: aarch64-apple-darwin, os: macos-latest }
+          - { platform: darwin-x64, target: x86_64-apple-darwin, os: macos-latest }
+          # built on the oldest supported Ubuntu so the binaries run on older glibc
+          - { platform: linux-x64, target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { platform: linux-arm64, target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { platform: win32-x64, target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Collect the binary
+        shell: bash
+        run: |
+          mkdir -p out/${{ matrix.platform }}
+          exe=yehi; [ "${{ runner.os }}" = Windows ] && exe=yehi.exe
+          cp target/${{ matrix.target }}/release/$exe out/${{ matrix.platform }}/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.platform }}
+          path: out/${{ matrix.platform }}
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          path: artifacts
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: node npm/stage.mjs --artifacts artifacts --out dist --require-all
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # a prerelease (0.2.0-rc.1) goes out under "next", so "latest" stays on the newest stable release
+          tag=latest; case "$VERSION" in *-*) tag=next;; esac
+          # the platform packages first, so yehi never points at a binary that isn't there; skip what's
+          # already published, so a failed release can be re-run
+          for dir in dist/yehi-* dist/yehi; do
+            name=$(node -p "require('./$dir/package.json').name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already published"
+            else
+              npm publish "$dir" --access public --provenance --tag "$tag"
+            fi
+          done
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p assets
+          for d in artifacts/*/; do
+            p=$(basename "$d")
+            tar -czf "assets/yehi-$VERSION-$p.tar.gz" -C "$d" .
+          done
+          pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" assets/* --generate-notes $pre \
+            || gh release upload "$GITHUB_REF_NAME" assets/* --clobber

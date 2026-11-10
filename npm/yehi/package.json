@@ -1,0 +1,11 @@
+{
+  "name": "yehi",
+  "description": "Fast GPU video rendering from a JSON spec, built for AI agents",
+  "license": "MIT",
+  "keywords": ["video", "render", "gpu", "motion-graphics", "agents", "ffmpeg"],
+  "homepage": "https://github.com/zhamann/yehi#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/zhamann/yehi.git" },
+  "bin": { "yehi": "bin/yehi.js" },
+  "files": ["bin", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" }
+}
