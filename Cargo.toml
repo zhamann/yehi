@@ -2,8 +2,11 @@
 name = "yehi"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.90"
 license = "MIT"
 description = "Fast GPU video rendering from a JSON spec, built for AI agents"
+repository = "https://github.com/zhamann/yehi"
+homepage = "https://github.com/zhamann/yehi#readme"
 readme = "README.md"
 keywords = ["video", "render", "gpu", "motion-graphics", "agents"]
 categories = ["multimedia::video", "command-line-utilities", "rendering"]
@@ -21,3 +24,13 @@ serde_json = "1.0.154"
 serde_path_to_error = "0.1.20"
 swash = "0.2.10"
 wgpu = "30.0.1"
+
+[profile.release]
+strip = true
+
+# The published binaries: smaller (6 MB instead of 8) for twice the build time, and no faster, since the GPU and
+# the encoder set the pace.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

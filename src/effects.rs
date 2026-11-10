@@ -19,8 +19,8 @@ pub fn code(name: &str) -> Option<&'static str> {
              return vec4f(vec3f(n * amount), 0.0);"
         }
         "linear_gradient" => {
-            "let dir = to - from;
-             let k = clamp(dot(uv - from, dir) / max(dot(dir, dir), 1e-6), 0.0, 1.0);
+            "let dir = point_b - point_a;
+             let k = clamp(dot(uv - point_a, dir) / max(dot(dir, dir), 1e-6), 0.0, 1.0);
              let c = mix(color_a, color_b, k);
              return vec4f(c.rgb * c.a, c.a);"
         }
@@ -41,8 +41,8 @@ pub fn defaults(name: &str) -> Vec<(&'static str, Value)> {
         }
         "grain" => vec![("amount", json!(0.04)), ("size_px", json!(1.0))],
         "linear_gradient" => vec![
-            ("from", json!([0.5, 0.0])),
-            ("to", json!([0.5, 1.0])),
+            ("point_a", json!([0.5, 0.0])),
+            ("point_b", json!([0.5, 1.0])),
             ("color_a", json!("#000000")),
             ("color_b", json!("#ffffff")),
         ],

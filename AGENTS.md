@@ -11,7 +11,8 @@ A CLI that renders video from a JSON spec as fast as the machine allows: GPU com
 - `src/text.rs`: font loading, shaping, the glyph atlas. `src/video.rs`: video-layer decoding. `src/encode.rs`: encoder choice and the ffmpeg command. `src/sheet.rs`: contact sheets.
 - `docs/spec.md`: the spec reference, compiled into the binary as `yehi docs`.
 - `skills/yehi/SKILL.md`: the agent skill.
-- `npm/`: the npm distribution. `yehi` is a Node launcher that runs the binary from a `yehi-<platform>` package (npm installs only the one matching the machine); `stage.mjs` lays the packages out from built binaries, and `.github/workflows/release.yml` builds and publishes them on a version tag.
+- `npm/`: the npm distribution. `yehi` is a Node launcher that runs the binary from a `yehi-<platform>` package (npm installs only the one matching the machine); `stage.mjs` lays the packages out from built binaries, and `.github/workflows/release.yml` builds and publishes them on a version tag (see CONTRIBUTING.md).
+- `about.toml`, `about.hbs`, `scripts/third-party-licenses.sh`: the dependency license notices shipped with every binary. CI fails when a new dependency's license isn't one `about.toml` accepts.
 
 ## Rules
 
@@ -24,4 +25,4 @@ A CLI that renders video from a JSON spec as fast as the machine allows: GPU com
 ## Commands
 
 - `cargo test`: unit tests and end-to-end tests on `examples/hello.json` (need a GPU or Mesa's software Vulkan, and ffmpeg).
-- `cargo clippy --all-targets` and `cargo fmt --check`: the checks CI runs.
+- `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check`: the checks CI runs, along with a Windows build, an Intel Mac build, and `cargo check` on the oldest supported Rust (`rust-version` in Cargo.toml).

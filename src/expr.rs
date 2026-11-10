@@ -324,17 +324,23 @@ impl Expr {
 
     /// The constant value, if the expression reads no variables.
     pub fn constant(&self) -> Option<f64> {
-        fn has_var(n: &Node) -> bool {
-            match n {
-                Node::Num(_) => false,
-                Node::Var(_) => true,
-                Node::Neg(a) | Node::Not(a) => has_var(a),
-                Node::Bin(_, a, b) => has_var(a) || has_var(b),
-                Node::Cond(a, b, c) => has_var(a) || has_var(b) || has_var(c),
-                Node::Call(_, args) => args.iter().any(has_var),
-            }
-        }
-        (!has_var(&self.root)).then(|| eval(&self.root, &Vars::default()))
+        (!reads(&self.root, &|_| true)).then(|| eval(&self.root, &Vars::default()))
+    }
+
+    /// Whether the expression reads `i` or `n`, which only text `glyphs` properties define.
+    pub fn reads_glyph_vars(&self) -> bool {
+        reads(&self.root, &|v| matches!(v, Var::I | Var::N))
+    }
+}
+
+fn reads(n: &Node, which: &dyn Fn(Var) -> bool) -> bool {
+    match n {
+        Node::Num(_) => false,
+        Node::Var(v) => which(*v),
+        Node::Neg(a) | Node::Not(a) => reads(a, which),
+        Node::Bin(_, a, b) => reads(a, which) || reads(b, which),
+        Node::Cond(a, b, c) => reads(a, which) || reads(b, which) || reads(c, which),
+        Node::Call(_, args) => args.iter().any(|a| reads(a, which)),
     }
 }
 

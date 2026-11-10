@@ -10,7 +10,7 @@ yehi video  video.json -o out.mp4            # the video
 yehi video  video.json -o part.mp4 --start 10 --end 14   # just that part, with its audio
 ```
 
-`yehi video` options: `--codec h264|hevc|prores` (h264), `--quality draft|standard|high` (standard), `--encoder auto|hardware|software|<ffmpeg encoder>` (auto picks the fastest that works here), `--bitrate 12M`, `--no-audio`.
+`yehi video` writes `.mp4`, `.mov` or `.mkv` (ProRes: `.mov` or `.mkv`). Options: `--codec h264|hevc|prores` (h264), `--quality draft|standard|high` (standard), `--encoder auto|hardware|software|<ffmpeg encoder>` (auto picks the fastest that works here), `--bitrate 12M`, `--no-audio`, `--start` and `--end` (seconds, inside the video).
 
 ## Workflow
 
@@ -34,11 +34,14 @@ yehi video  video.json -o part.mp4 --start 10 --end 14   # just that part, with 
 | Field | Meaning |
 |---|---|
 | `width`, `height` | Even pixel sizes. Video output also needs `width` to be a multiple of 8 (1080, 1920, 720, 1280 are). |
-| `fps`, `duration` | Frames per second and length in seconds. |
+| `fps`, `duration` | Frames per second (more than 0, up to 240) and length in seconds. |
 | `background` | Color under everything. Default black. |
 | `audio` | Sound placed on the timeline: `src`, `start` (s), `trim` (s skipped from the source), `duration`, `volume` (1 = unchanged), `fade_in`, `fade_out` (s), `loop`. |
-| `loudness` | Normalize the mix to this integrated loudness in LUFS (social platforms target about -14). |
+| `loudness` | Normalize the mix to this integrated loudness in LUFS, from -70 to -5 (social platforms target about -14). |
 | `layers` | Drawn first to last; later layers cover earlier ones. |
+| `$schema`, `_comment` | Ignored, for editors and notes. |
+
+The file holds that one object and nothing else; any other field is an error.
 
 ## Values that animate
 
@@ -88,7 +91,7 @@ Images are drawn with mipmaps, so heavy downscaling stays smooth. Make images at
 
 ### video
 
-`src`, `size`, `fit`, `tint` as for images, plus `trim` (seconds skipped from the source), `loop`, `volume` (default 1), `muted`. Frame `k` of the layer shows source time `trim + k / fps`. A clip that ends holds its last frame. Its audio joins the mix at the layer's place on the timeline unless `muted`.
+`src`, `size`, `fit`, `tint` as for images, plus `trim` (seconds skipped from the source), `loop`, `volume` (default 1), `muted`. Frame `k` of the layer shows the source frame on screen at source time `trim + k / fps`, whatever the clip's own frame rate. A clip that ends holds its last frame. Its audio joins the mix while the layer, and every group around it, is visible, unless `muted`.
 
 ### text
 
@@ -96,7 +99,7 @@ Images are drawn with mipmaps, so heavy downscaling stays smooth. Make images at
 |---|---|---|
 | `text` | | The string. `\n` starts a new line. |
 | `font` | | A font file path (`.ttf`, `.otf`, `.ttc`), or an installed family name such as `"Helvetica"`. Prefer files: they render the same on every machine. |
-| `font_weight`, `font_style` | 400, `normal` | When `font` is a family name: weight 100–900, `normal` or `italic`. |
+| `font_weight`, `font_style` | 400, `normal` | When `font` is a family name: weight 100–900, `normal` or `italic`. A font file is one weight and style, so these are errors with one. |
 | `font_size` | 48 | In pixels. |
 | `color` | white | *Animatable*. |
 | `tracking` | 0 | *Animatable* letter spacing as a fraction of `font_size` (0.1 adds a tenth of the size after each character). Animate it to track text in or out. |
@@ -105,7 +108,7 @@ Images are drawn with mipmaps, so heavy downscaling stays smooth. Make images at
 | `max_width` | | Shrinks the text uniformly so its widest line fits, measured at the layer's final tracking. |
 | `box` | `layout` | What the anchor measures: `layout` (advance widths, ascent to descent; lines of different text sit on the same baseline) or `ink` (the glyphs' actual bounds; centers exactly what you see). |
 | `glyphs` | | Per-character animation: `offset` `[x, y]`, `opacity`, `scale`, `rotation`, each *animatable* with `i` (0-based index of the visible glyph) and `n` (count) available. Glyphs scale and turn around their own centers. |
-| `oversample` | 1 | Rasterize glyphs this many times larger, for text you scale up. |
+| `oversample` | 1 | Rasterize glyphs this many times larger (0.25 to 8), for text you scale up. |
 
 Text is shaped with kerning and ligatures. Stagger example:
 
@@ -128,7 +131,7 @@ A procedural layer: a WGSL function you write runs for every pixel of the layer'
 |---|---|
 | `code` | The body of a WGSL function returning `vec4f`: a straight (not premultiplied) color, `vec4f(rgb, alpha)`. A single expression without `return` is returned for you. |
 | `effect` | Instead of `code`, a built-in: `vignette`, `grain`, `linear_gradient`, `radial_gradient` (see below). |
-| `params` | Named values the code reads, up to 16: a number or expression (`f32`), `[a, b]` (`vec2f`), `[a, b, c]` (`vec3f`), `[a, b, c, d]` or `"#hex"` (`vec4f`). All *animatable*. Names must be WGSL identifiers. |
+| `params` | Named values the code reads, up to 16: a number or expression (`f32`), `[a, b]` (`vec2f`), `[a, b, c]` (`vec3f`), `[a, b, c, d]` or `"#hex"` (`vec4f`). All *animatable*. Names must be WGSL identifiers, not WGSL reserved words or the names below. With `effect`, only that effect's params. |
 | `size` | The box the shader fills. Default: the parent's size (the whole frame at the top level). |
 
 In scope inside `code`:
@@ -152,7 +155,7 @@ Built-in effects and their params (defaults in parentheses):
 
 - `vignette`: darkens toward the edges. `amount` (0.5), `color` ("#000000"), `inner` (0.4) and `outer` (1.5), the distances from the center (1 = edge midpoints) where it starts and reaches full strength.
 - `grain`: film grain that changes every frame. `amount` (0.04), `size_px` (1).
-- `linear_gradient`: `from` ([0.5, 0]) and `to` ([0.5, 1]) in uv, `color_a` ("#000000"), `color_b` ("#ffffff").
+- `linear_gradient`: `color_a` ("#000000") at `point_a` ([0.5, 0]) blending to `color_b` ("#ffffff") at `point_b` ([0.5, 1]), the points in uv.
 - `radial_gradient`: `center` ([0.5, 0.5]), `radius` ([0.5, 0.5]) in uv, `inner` (0, where the blend starts as a fraction of the radius), `color_a` at the center ("#ffffff"), `color_b` outside ("#000000").
 
 A shader layer can't take `clip`, `reveal` or `mask`; put it in an isolated group and set them there.

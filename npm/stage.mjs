@@ -1,7 +1,9 @@
 // Lays out the npm packages for a release from built binaries:
-//   node npm/stage.mjs --artifacts <dir> --out <dir> [--require-all]
+//   node npm/stage.mjs --artifacts <dir> --out <dir> [--notices <file>] [--require-all]
 // <artifacts>/<platform>/yehi (yehi.exe on Windows) for each platform built. Writes <out>/yehi-<platform>/ for each,
 // and <out>/yehi/, the launcher package that depends on all of them. The version comes from Cargo.toml.
+// --notices is THIRD-PARTY-LICENSES.txt (scripts/third-party-licenses.sh), shipped with each binary; a release
+// (--require-all) needs it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -27,10 +29,16 @@ function args() {
   const artifacts = get("--artifacts");
   const out = get("--out");
   if (!artifacts || !out) {
-    console.error("usage: node npm/stage.mjs --artifacts <dir> --out <dir> [--require-all]");
+    console.error("usage: node npm/stage.mjs --artifacts <dir> --out <dir> [--notices <file>] [--require-all]");
     process.exit(2);
   }
-  return { artifacts, out, requireAll: a.includes("--require-all") };
+  const requireAll = a.includes("--require-all");
+  const notices = get("--notices");
+  if (requireAll && !notices) {
+    console.error("a release needs --notices <THIRD-PARTY-LICENSES.txt>");
+    process.exit(2);
+  }
+  return { artifacts, out, notices, requireAll };
 }
 
 function version() {
@@ -45,7 +53,7 @@ function write(file, data) {
   fs.writeFileSync(file, typeof data === "string" ? data : JSON.stringify(data, null, 2) + "\n");
 }
 
-const { artifacts, out, requireAll } = args();
+const { artifacts, out, notices, requireAll } = args();
 const v = version();
 const main = JSON.parse(fs.readFileSync(path.join(here, "yehi", "package.json"), "utf8"));
 fs.rmSync(out, { recursive: true, force: true });
@@ -68,13 +76,14 @@ for (const [platform, p] of Object.entries(PLATFORMS)) {
     os: [p.os],
     cpu: [p.cpu],
     ...(p.libc ? { libc: [p.libc] } : {}),
-    files: ["bin", "LICENSE"],
+    files: ["bin", "LICENSE", ...(notices ? ["THIRD-PARTY-LICENSES.txt"] : [])],
     preferUnplugged: true,
   };
   if (main.license) pkg.license = main.license;
   write(path.join(dir, "package.json"), pkg);
   write(path.join(dir, "README.md"), `# yehi-${platform}\n\nThe [yehi](https://www.npmjs.com/package/yehi) binary for ${p.label}. Install \`yehi\` instead; npm picks this package for you.\n`);
   fs.copyFileSync(path.join(root, "LICENSE"), path.join(dir, "LICENSE"));
+  if (notices) fs.copyFileSync(notices, path.join(dir, "THIRD-PARTY-LICENSES.txt"));
   fs.mkdirSync(path.join(dir, "bin"), { recursive: true });
   fs.copyFileSync(src, path.join(dir, "bin", exe));
   fs.chmodSync(path.join(dir, "bin", exe), 0o755);

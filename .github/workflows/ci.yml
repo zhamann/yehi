@@ -22,13 +22,15 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --locked -- -D warnings
       # renders on the CPU through Mesa's software Vulkan driver
-      - run: cargo test
+      - run: cargo test --locked
+      # fails when a dependency's license isn't one about.toml accepts
+      - run: scripts/third-party-licenses.sh notices/THIRD-PARTY-LICENSES.txt
       - name: npm packages stage and pack
         run: |
           mkdir -p artifacts/linux-x64 && cp target/debug/yehi artifacts/linux-x64/
-          node npm/stage.mjs --artifacts artifacts --out dist
+          node npm/stage.mjs --artifacts artifacts --out dist --notices notices/THIRD-PARTY-LICENSES.txt
           npm pack ./dist/yehi-linux-x64 ./dist/yehi --dry-run
           npm install --no-save ./dist/yehi-linux-x64 ./dist/yehi
           npx yehi check examples/hello.json
@@ -40,6 +42,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
+          targets: x86_64-apple-darwin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - run: cargo build --release
-      - run: cargo test --bins
+      - run: cargo build --release --locked
+      - run: cargo test --bins --locked
+      # the Intel Mac binary is cross-compiled on Apple silicon at release
+      - run: cargo build --locked --target x86_64-apple-darwin
+
+  # no GPU or ffmpeg on the runner, so the unit tests and a build
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo build --locked
+      - run: cargo test --bins --locked
+      - run: ./target/debug/yehi.exe docs > $null
+
+  # the oldest Rust that builds yehi, Cargo.toml's rust-version
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.90"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo check --locked --all-targets

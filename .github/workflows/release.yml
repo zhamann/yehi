@@ -1,7 +1,7 @@
 name: Release
 
-# Push a tag matching Cargo.toml's version (v0.2.0) to build every platform's binary, publish the npm packages
-# (yehi and its yehi-<platform> binaries), and attach the binaries to a GitHub release.
+# Push a tag matching Cargo.toml's version (v0.2.0) on a commit in main to build every platform's binary, publish
+# the npm packages (yehi and its yehi-<platform> binaries), and attach the binaries to a GitHub release.
 
 on:
   push:
@@ -9,6 +9,15 @@ on:
 
 permissions:
   contents: read
+
+# one release per tag at a time; a second push of the same tag waits rather than racing the first
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # a known compiler for published binaries; bump it on purpose
+  RUST_TOOLCHAIN: "1.99.1"
 
 jobs:
   checks:
@@ -20,11 +29,17 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
       - id: v
         run: |
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [ "v$v" != "$GITHUB_REF_NAME" ]; then
             echo "tag $GITHUB_REF_NAME doesn't match Cargo.toml version $v" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "tag $GITHUB_REF_NAME is on a commit that isn't in main; tag a commit from main" >&2
             exit 1
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
@@ -37,9 +52,9 @@ jobs:
         include:
           - { platform: darwin-arm64, target: aarch64-apple-darwin, os: macos-latest }
           - { platform: darwin-x64, target: x86_64-apple-darwin, os: macos-latest }
-          # built on the oldest supported Ubuntu so the binaries run on older glibc
-          - { platform: linux-x64, target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
-          - { platform: linux-arm64, target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          # linked against glibc 2.17 with zig, so the binaries run on any Linux from the last decade
+          - { platform: linux-x64, target: x86_64-unknown-linux-gnu, os: ubuntu-24.04, glibc: "2.17" }
+          - { platform: linux-arm64, target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm, glibc: "2.17" }
           - { platform: win32-x64, target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
     env:
@@ -48,25 +63,54 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ matrix.target }}
-      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.glibc }}" ]; then
+            pip install ziglang==0.17.1 cargo-zigbuild==0.24.1
+            cargo zigbuild --profile dist --locked --target ${{ matrix.target }}.${{ matrix.glibc }}
+          else
+            cargo build --profile dist --locked --target ${{ matrix.target }}
+          fi
       - name: Collect the binary
         shell: bash
         run: |
           mkdir -p out/${{ matrix.platform }}
           exe=yehi; [ "${{ runner.os }}" = Windows ] && exe=yehi.exe
-          cp target/${{ matrix.target }}/release/$exe out/${{ matrix.platform }}/
+          cp target/${{ matrix.target }}/dist/$exe out/${{ matrix.platform }}/
+          bin=out/${{ matrix.platform }}/$exe
+          # run it where this runner can: natively, or the Intel Mac build through Rosetta
+          if [ "${{ matrix.platform }}" = darwin-x64 ]; then
+            if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 "$bin" --version; else echo "no Rosetta: not run"; fi
+          else
+            "$bin" --version
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.platform }}
           path: out/${{ matrix.platform }}
 
+  notices:
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - run: scripts/third-party-licenses.sh notices/THIRD-PARTY-LICENSES.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: notices
+          path: notices
+
   publish:
-    needs: [version, build]
+    needs: [version, build, notices]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -78,9 +122,12 @@ jobs:
           path: artifacts
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: node npm/stage.mjs --artifacts artifacts --out dist --require-all
+      # npm 11.5 or later publishes through trusted publishing when a package has it set up, and with
+      # NPM_TOKEN otherwise
+      - run: npm install -g npm@11
+      - run: node npm/stage.mjs --artifacts artifacts --out dist --notices artifacts/notices/THIRD-PARTY-LICENSES.txt --require-all
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -104,10 +151,19 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           mkdir -p assets
-          for d in artifacts/*/; do
-            p=$(basename "$d")
-            tar -czf "assets/yehi-$VERSION-$p.tar.gz" -C "$d" .
+          for p in darwin-arm64 darwin-x64 linux-x64 linux-arm64 win32-x64; do
+            d=artifacts/$p
+            # artifact transfer drops the executable bit
+            chmod +x "$d"/yehi*
+            cp LICENSE artifacts/notices/THIRD-PARTY-LICENSES.txt "$d"/
+            name=yehi-$VERSION-$p
+            if [ "$p" = win32-x64 ]; then
+              (cd "$d" && zip -q "../../assets/$name.zip" ./*)
+            else
+              tar -czf "assets/$name.tar.gz" -C "$d" .
+            fi
           done
+          (cd assets && sha256sum ./* > SHA256SUMS)
           pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
           gh release create "$GITHUB_REF_NAME" assets/* --generate-notes $pre \
             || gh release upload "$GITHUB_REF_NAME" assets/* --clobber
