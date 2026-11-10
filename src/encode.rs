@@ -27,17 +27,22 @@ pub struct Opts {
     pub bitrate: Option<String>,
 }
 
+pub const MISSING: &str = "ffmpeg isn't installed or isn't on the PATH. Install it (macOS: brew install ffmpeg; \
+     Debian/Ubuntu: apt install ffmpeg; Windows: winget install ffmpeg), or set YEHI_FFMPEG and YEHI_FFPROBE to its programs";
+
+/// The ffmpeg or ffprobe to run: `YEHI_FFMPEG` / `YEHI_FFPROBE` when set, else the one on the PATH.
+pub fn tool(name: &str) -> String {
+    std::env::var(format!("YEHI_{}", name.to_ascii_uppercase())).unwrap_or_else(|_| name.to_string())
+}
+
 fn encoders() -> Result<String> {
-    let out = Command::new("ffmpeg")
-        .args(["-hide_banner", "-encoders"])
-        .output()
-        .context("can't run ffmpeg; install it (https://ffmpeg.org)")?;
+    let out = Command::new(tool("ffmpeg")).args(["-hide_banner", "-encoders"]).output().context(MISSING)?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Whether an encoder actually works here (a listed NVENC encoder still needs an NVIDIA GPU).
 fn works(name: &str) -> bool {
-    Command::new("ffmpeg")
+    Command::new(tool("ffmpeg"))
         .args([
             "-v",
             "error",
@@ -153,7 +158,7 @@ fn video_args(enc: &str, o: &Opts, comp: &Comp) -> Vec<String> {
 /// `span` is the part of the timeline being rendered, in seconds.
 pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts, span: (f64, f64)) -> Result<Child> {
     let duration = comp.duration;
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(tool("ffmpeg"));
     cmd.args(["-y", "-hide_banner", "-loglevel", "error", "-nostdin"]);
     cmd.args([
         "-f",
@@ -224,5 +229,5 @@ pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts, span
     }
     cmd.arg(out);
     cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
-    cmd.spawn().context("can't start ffmpeg; install it (https://ffmpeg.org)")
+    cmd.spawn().context(MISSING)
 }

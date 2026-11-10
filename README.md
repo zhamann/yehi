@@ -23,13 +23,13 @@ The compositor alone runs at about 600 frames a second at 1080x1920; the rest is
 
 ## Install
 
-Requires [ffmpeg](https://ffmpeg.org) on the PATH. Build it with [Rust](https://rustup.rs):
+yehi needs [ffmpeg](https://ffmpeg.org) on the PATH (`brew install ffmpeg`, `apt install ffmpeg`, `winget install ffmpeg`), or `YEHI_FFMPEG` and `YEHI_FFPROBE` set to its programs. Build it with [Rust](https://rustup.rs):
 
 ```bash
 cargo install --path .
 ```
 
-On Linux without a GPU, install a software Vulkan driver (`apt install mesa-vulkan-drivers`). Or use the Docker image, which includes ffmpeg and the driver:
+On Linux without a GPU, also install a software Vulkan driver (`apt install mesa-vulkan-drivers`). The Docker image includes both:
 
 ```bash
 docker build -t yehi .
