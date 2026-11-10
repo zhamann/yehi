@@ -263,7 +263,8 @@ impl<'a> Scene<'a> {
         let mut fonts = Fonts::new();
         let mut shaper = swash::shape::ShapeContext::new();
         let mut loader = Loader { images: &images, fonts: &mut fonts, shaper: &mut shaper };
-        scene.load_layers(&comp.layers, [comp.width as f64, comp.height as f64], main, 0.0, &mut loader)?;
+        let whole = Window { offset: 0.0, from: 0.0, to: comp.duration };
+        scene.load_layers(&comp.layers, [comp.width as f64, comp.height as f64], main, whole, &mut loader)?;
         let pages = std::mem::take(&mut scene.atlas.pages);
         for p in &pages {
             let t = scene.gpu.texture_r8(text::PAGE, text::PAGE, p);
@@ -277,16 +278,17 @@ impl<'a> Scene<'a> {
         layers: &[Layer],
         parent: [f64; 2],
         target: usize,
-        offset: f64,
+        win: Window,
         ld: &mut Loader,
     ) -> Result<()> {
         for l in layers {
-            self.load_layer(l, parent, target, offset, ld).with_context(|| l.path.clone())?;
+            self.load_layer(l, parent, target, win, ld).with_context(|| l.path.clone())?;
         }
         Ok(())
     }
 
-    fn load_layer(&mut self, l: &Layer, parent: [f64; 2], target: usize, offset: f64, ld: &mut Loader) -> Result<()> {
+    fn load_layer(&mut self, l: &Layer, parent: [f64; 2], target: usize, win: Window, ld: &mut Loader) -> Result<()> {
+        let win = win.child(l);
         if let Some(m) = &l.mask {
             let (tex, _, _) = ld.images[&m.src];
             self.masks.insert(m.src.clone(), tex);
@@ -302,12 +304,17 @@ impl<'a> Scene<'a> {
                 let tex = self.gpu.texture_rgba8(w, h, &[vec![0; (w * h * 4) as usize]], "video");
                 let dec = Decoder::new(src.clone(), *trim, self.comp.fps, w, h, *looped, &info);
                 self.decoders.push(dec);
-                if info.has_audio && !*muted && *volume > 0.0 {
-                    let play = if *looped { l.duration } else { l.duration.min((info.duration - trim).max(0.0)) };
+                // the soundtrack plays while the layer and all its parents are visible
+                let trim = trim + (win.from - win.offset).max(0.0); // a parent's clip can start later than the layer
+                let mut play = win.to - win.from;
+                if !*looped {
+                    play = play.min(info.duration - trim);
+                }
+                if info.has_audio && !*muted && *volume > 0.0 && play > 0.0 {
                     self.video_audio.push(Audio {
                         src: src.clone(),
-                        start: offset + l.start,
-                        trim: *trim,
+                        start: win.from,
+                        trim,
                         duration: Some(play),
                         volume: *volume,
                         fade_in: 0.0,
@@ -345,7 +352,7 @@ impl<'a> Scene<'a> {
             }
             Kind::Shader(s) => {
                 let src = shader_source(s);
-                let prog = self.gpu.shader_prog(&src, &format!("{} shader", l.path), target)?;
+                let prog = self.gpu.shader_prog(&src, "shader", target)?;
                 Res::Shader { prog }
             }
             Kind::Group { layers, size, isolate } => {
@@ -354,10 +361,10 @@ impl<'a> Scene<'a> {
                 if *isolate {
                     let (w, h) = (size[0].round().max(1.0) as u32, size[1].round().max(1.0) as u32);
                     let t = self.gpu.target(w, h, target_needs_backdrop(layers))?;
-                    self.load_layers(layers, size, t, offset + l.start, ld)?;
+                    self.load_layers(layers, size, t, win, ld)?;
                     Res::Isolated { target: t, w: w as f64, h: h as f64 }
                 } else {
-                    self.load_layers(layers, size, target, offset + l.start, ld)?;
+                    self.load_layers(layers, size, target, win, ld)?;
                     Res::None
                 }
             }
@@ -634,6 +641,23 @@ impl<'a> Scene<'a> {
     }
 }
 
+/// Where a layer sits on the composition's timeline while loading: its children's time origin, and the span in
+/// which it and all its parents are visible, in composition seconds.
+#[derive(Clone, Copy)]
+struct Window {
+    offset: f64,
+    from: f64,
+    to: f64,
+}
+
+impl Window {
+    /// The window of a child layer `l` of this one.
+    fn child(self, l: &Layer) -> Window {
+        let start = self.offset + l.start;
+        Window { offset: start, from: self.from.max(start), to: self.to.min(start + l.duration) }
+    }
+}
+
 struct Loader<'a> {
     images: &'a HashMap<PathBuf, (usize, u32, u32)>,
     fonts: &'a mut Fonts,
@@ -753,6 +777,18 @@ fn push_fitted(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn built_in_effects_compile() {
+        for name in crate::effects::NAMES {
+            let spec = format!(
+                r#"{{"width": 64, "height": 64, "fps": 30, "duration": 1, "layers": [{{"type": "shader", "effect": "{name}"}}]}}"#
+            );
+            let c = crate::spec::parse(&spec, std::path::Path::new(".")).unwrap();
+            let Kind::Shader(s) = &c.layers[0].kind else { panic!() };
+            crate::gpu::check_wgsl(&shader_source(s), name).unwrap();
+        }
+    }
 
     #[test]
     fn affine_inverse_round_trips() {

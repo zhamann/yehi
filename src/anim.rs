@@ -74,6 +74,10 @@ impl AnimF {
             _ => None,
         }
     }
+    /// Whether it reads `i` or `n`, the glyph index and count.
+    pub fn reads_glyph_vars(&self) -> bool {
+        matches!(self, AnimF::Expr(e) if e.reads_glyph_vars())
+    }
 }
 
 fn eval_keys(k: &[Key], t: f64) -> f64 {
@@ -182,6 +186,9 @@ impl AnimV2 {
     pub fn constant(&self) -> Option<[f64; 2]> {
         Some([self.0[0].constant()?, self.0[1].constant()?])
     }
+    pub fn reads_glyph_vars(&self) -> bool {
+        self.0.iter().any(AnimF::reads_glyph_vars)
+    }
 }
 
 impl<'de> Deserialize<'de> for AnimV2 {
@@ -241,6 +248,9 @@ impl AnimColor {
     }
     pub fn eval(&self, v: &Vars) -> [f64; 4] {
         [self.0[0].eval(v), self.0[1].eval(v), self.0[2].eval(v), self.0[3].eval(v)]
+    }
+    pub fn reads_glyph_vars(&self) -> bool {
+        self.0.iter().any(AnimF::reads_glyph_vars)
     }
     pub fn from_value(v: &Value) -> Result<AnimColor> {
         if is_keyframes(v) {

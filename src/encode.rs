@@ -27,16 +27,58 @@ pub struct Opts {
     pub bitrate: Option<String>,
 }
 
-pub const MISSING: &str = "ffmpeg isn't installed or isn't on the PATH. Install it (macOS: brew install ffmpeg; \
-     Debian/Ubuntu: apt install ffmpeg; Windows: winget install ffmpeg), or set YEHI_FFMPEG and YEHI_FFPROBE to its programs";
-
 /// The ffmpeg or ffprobe to run: `YEHI_FFMPEG` / `YEHI_FFPROBE` when set, else the one on the PATH.
 pub fn tool(name: &str) -> String {
-    std::env::var(format!("YEHI_{}", name.to_ascii_uppercase())).unwrap_or_else(|_| name.to_string())
+    std::env::var(env_var(name)).unwrap_or_else(|_| name.to_string())
+}
+
+fn env_var(name: &str) -> String {
+    format!("YEHI_{}", name.to_ascii_uppercase())
+}
+
+/// What to say when ffmpeg or ffprobe can't be started.
+pub fn missing(name: &str) -> String {
+    let var = env_var(name);
+    match std::env::var(&var) {
+        Ok(v) => format!("{var} is set to `{v}`, which can't be run; point it at the {name} program, or unset it"),
+        Err(_) => format!(
+            "{name} isn't installed or isn't on the PATH. Install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: \
+             apt install ffmpeg; Windows: winget install ffmpeg), or set YEHI_FFMPEG and YEHI_FFPROBE to its programs"
+        ),
+    }
+}
+
+/// Whether ffmpeg or ffprobe can be run here.
+pub fn installed(name: &str) -> bool {
+    Command::new(tool(name)).arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok()
+}
+
+/// The output file's extension suits the codec.
+pub fn check_output(out: &Path, codec: Codec) -> Result<()> {
+    let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let (ok, list): (&[&str], &str) = match codec {
+        Codec::Prores => (&["mov", "mkv"], ".mov or .mkv"),
+        _ => (&["mp4", "mov", "mkv", "m4v"], ".mp4, .mov or .mkv"),
+    };
+    if !ok.contains(&ext.as_str()) {
+        let name = format!("{codec:?}").to_ascii_lowercase();
+        bail!("-o {}: {name} video goes in a {list} file", out.display());
+    }
+    Ok(())
+}
+
+/// A bitrate ffmpeg reads: a number with an optional k, M or G, such as 12M or 800k.
+pub fn check_bitrate(b: &str) -> Result<()> {
+    let digits = b.strip_suffix(['k', 'K', 'm', 'M', 'g', 'G']).unwrap_or(b);
+    if digits.parse::<f64>().map_or(true, |v| !(v > 0.0 && v.is_finite())) || digits.starts_with(['+', '-']) {
+        bail!("--bitrate must be bits per second with an optional k, M or G, such as 12M or 800k, got `{b}`");
+    }
+    Ok(())
 }
 
 fn encoders() -> Result<String> {
-    let out = Command::new(tool("ffmpeg")).args(["-hide_banner", "-encoders"]).output().context(MISSING)?;
+    let out =
+        Command::new(tool("ffmpeg")).args(["-hide_banner", "-encoders"]).output().with_context(|| missing("ffmpeg"))?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -185,6 +227,8 @@ pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts, span
         let mut graph = String::new();
         for (k, a) in audio.iter().enumerate() {
             let dur = a.duration.unwrap_or(duration - a.start).max(0.0);
+            // a sound starting before the video does is cut to the part from 0 on
+            let early = (-a.start).max(0.0);
             graph += &format!(
                 "[{}:a]atrim=start={}:duration={dur},asetpts=PTS-STARTPTS,aresample=48000,volume={}",
                 k + 1,
@@ -197,14 +241,18 @@ pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts, span
             if a.fade_out > 0.0 {
                 graph += &format!(",afade=t=out:st={}:d={}", (dur - a.fade_out).max(0.0), a.fade_out);
             }
-            let ms = (a.start.max(0.0) * 1000.0).round() as u64;
-            graph += &format!(",adelay=delays={ms}:all=1[a{k}];");
+            if early > 0.0 {
+                graph += &format!(",atrim=start={early}");
+            }
+            // placed on the timeline by timestamp, the gap before it filled with silence (adelay drops its
+            // delay when the input was trimmed)
+            graph += &format!(",asetpts=N/SR/TB+{}/TB,aresample=async=1:first_pts=0[a{k}];", a.start.max(0.0));
         }
         for k in 0..audio.len() {
             graph += &format!("[a{k}]");
         }
         graph += &format!(
-            "amix=inputs={}:normalize=0:dropout_transition=0,apad=whole_dur={},atrim=start={}:end={},asetpts=PTS-STARTPTS",
+            "amix=inputs={}:normalize=0:dropout_transition=0,apad=whole_dur={},atrim=start={}:end={},asetpts=N/SR/TB",
             audio.len(),
             span.1,
             span.0,
@@ -229,5 +277,5 @@ pub fn spawn(out: &Path, comp: &Comp, audio: &[Audio], enc: &str, o: &Opts, span
     }
     cmd.arg(out);
     cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
-    cmd.spawn().context(MISSING)
+    cmd.spawn().with_context(|| missing("ffmpeg"))
 }

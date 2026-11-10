@@ -306,11 +306,12 @@ pub fn load(path: &Path) -> Result<Comp> {
 
 pub fn parse(text: &str, dir: &Path) -> Result<Comp> {
     let de = &mut serde_json::Deserializer::from_str(text);
-    let spec: SpecJson = serde_path_to_error::deserialize(de).map_err(|e| {
+    let spec: SpecJson = serde_path_to_error::deserialize(&mut *de).map_err(|e| {
         let path = e.path().to_string();
         let inner = e.into_inner();
-        if path == "." { anyhow!("{inner}") } else { anyhow!("{path}: {inner}") }
+        if path == "." || path == "?" { anyhow!("{inner}") } else { anyhow!("{path}: {inner}") }
     })?;
+    de.end().map_err(|e| anyhow!("{e}: the file must hold one JSON object and nothing after it"))?;
     if spec.width == 0 || spec.height == 0 || spec.width % 2 == 1 || spec.height % 2 == 1 {
         bail!(
             "width and height must be even and non-zero (video encoders need even sizes), got {}x{}",
@@ -318,17 +319,35 @@ pub fn parse(text: &str, dir: &Path) -> Result<Comp> {
             spec.height
         );
     }
-    if spec.fps.is_nan() || spec.fps <= 0.0 || spec.fps > 240.0 {
-        bail!("fps must be between 0 and 240, got {}", spec.fps);
+    if !(spec.fps > 0.0 && spec.fps <= 240.0) {
+        bail!("fps must be more than 0 and at most 240, got {}", spec.fps);
     }
-    if spec.duration.is_nan() || spec.duration <= 0.0 {
+    if !(spec.duration > 0.0 && spec.duration.is_finite()) {
         bail!("duration must be positive, got {}", spec.duration);
+    }
+    if let Some(l) = spec.loudness
+        && !(-70.0..=-5.0).contains(&l)
+    {
+        bail!("loudness must be between -70 and -5 LUFS (social platforms target about -14), got {l}");
     }
     let mut b = Builder { dir: dir.to_path_buf(), next_id: 0, errors: Vec::new() };
     let layers = b.layers(spec.layers, "layers", spec.duration);
     let mut audio = Vec::new();
     for (i, a) in spec.audio.into_iter().enumerate() {
         let src = b.asset(&a.src, &format!("audio[{i}].src"));
+        for (field, v) in [("trim", a.trim), ("volume", a.volume), ("fade_in", a.fade_in), ("fade_out", a.fade_out)] {
+            if !(v >= 0.0 && v.is_finite()) {
+                b.errors.push(format!("audio[{i}].{field} must be 0 or more, got {v}"));
+            }
+        }
+        if !a.start.is_finite() {
+            b.errors.push(format!("audio[{i}].start must be a number of seconds, got {}", a.start));
+        }
+        if let Some(d) = a.duration
+            && !(d > 0.0 && d.is_finite())
+        {
+            b.errors.push(format!("audio[{i}].duration must be positive, got {d}"));
+        }
         audio.push(Audio {
             src,
             start: a.start,
@@ -438,9 +457,28 @@ impl Builder {
         let kind = l.kind.as_str();
         let ok = allowed(kind)
             .ok_or_else(|| anyhow!("unknown type `{kind}`; use image, video, text, rect, ellipse, shader or group"))?;
+        let a = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
         for f in l.present() {
             if !ok.contains(&f) && !COMMON.contains(&f) {
-                bail!("`{f}` doesn't apply to a {kind} layer; a {kind} layer takes {}", ok.join(", "));
+                bail!("`{f}` doesn't apply to {a} {kind} layer; {a} {kind} layer takes {}", ok.join(", "));
+            }
+        }
+        let glyph_vars = [
+            ("position", l.position.as_ref().is_some_and(AnimV2::reads_glyph_vars)),
+            ("anchor", l.anchor.as_ref().is_some_and(AnimV2::reads_glyph_vars)),
+            ("scale", l.scale.as_ref().is_some_and(AnimV2::reads_glyph_vars)),
+            ("rotation", l.rotation.as_ref().is_some_and(AnimF::reads_glyph_vars)),
+            ("opacity", l.opacity.as_ref().is_some_and(AnimF::reads_glyph_vars)),
+            ("size", l.size.as_ref().is_some_and(AnimV2::reads_glyph_vars)),
+            ("tint", l.tint.as_ref().is_some_and(AnimColor::reads_glyph_vars)),
+            ("color", l.color.as_ref().is_some_and(AnimColor::reads_glyph_vars)),
+            ("tracking", l.tracking.as_ref().is_some_and(AnimF::reads_glyph_vars)),
+            ("radius", l.radius.as_ref().is_some_and(AnimF::reads_glyph_vars)),
+            ("reveal.progress", l.reveal.as_ref().is_some_and(|r| r.progress.reads_glyph_vars())),
+        ];
+        for (f, reads) in glyph_vars {
+            if reads {
+                bail!("`{f}` reads `i` or `n`, which exist only in a text layer's `glyphs`");
             }
         }
         let path = match &l.name {
@@ -454,9 +492,6 @@ impl Builder {
             (None, Some(e)) => e - start,
             (None, None) => parent_dur - start,
         };
-        if duration <= 0.0 {
-            return Ok(None); // starts after its parent ends: never visible
-        }
         let blend = match l.blend.as_deref() {
             None => None,
             Some("normal") => Some(Blend::Normal),
@@ -467,12 +502,18 @@ impl Builder {
         };
         let clip = match &l.clip {
             None => None,
-            Some(Value::Array(a)) if a.len() == 4 => Some([
-                AnimF::from_value(&a[0]).context("clip x")?,
-                AnimF::from_value(&a[1]).context("clip y")?,
-                AnimF::from_value(&a[2]).context("clip width")?,
-                AnimF::from_value(&a[3]).context("clip height")?,
-            ]),
+            Some(Value::Array(a)) if a.len() == 4 => {
+                let c = [
+                    AnimF::from_value(&a[0]).context("clip x")?,
+                    AnimF::from_value(&a[1]).context("clip y")?,
+                    AnimF::from_value(&a[2]).context("clip width")?,
+                    AnimF::from_value(&a[3]).context("clip height")?,
+                ];
+                if c.iter().any(AnimF::reads_glyph_vars) {
+                    bail!("`clip` reads `i` or `n`, which exist only in a text layer's `glyphs`");
+                }
+                Some(c)
+            }
             Some(v) => bail!("clip must be [x, y, width, height] in the parent's coordinates, got {v}"),
         };
         let reveal = l.reveal.map(|r| Reveal {
@@ -535,6 +576,11 @@ impl Builder {
                     Some(f) => {
                         let lower = f.to_ascii_lowercase();
                         if [".ttf", ".otf", ".ttc", ".otc"].iter().any(|e| lower.ends_with(e)) {
+                            if l.font_weight.is_some() || l.font_style.is_some() {
+                                bail!(
+                                    "`font_weight` and `font_style` apply only when `font` is a family name; a font file is one weight and style, so point `font` at the file you want"
+                                );
+                            }
                             FontRef::File(self.asset(&f, &format!("{at}.font")))
                         } else {
                             let italic = match l.font_style.as_deref() {
@@ -542,7 +588,11 @@ impl Builder {
                                 Some("italic") => true,
                                 Some(o) => bail!("font_style must be normal or italic, got `{o}`"),
                             };
-                            FontRef::Family { name: f, weight: l.font_weight.unwrap_or(400), italic }
+                            let weight = l.font_weight.unwrap_or(400);
+                            if !(100..=900).contains(&weight) {
+                                bail!("font_weight must be from 100 to 900, got {weight}");
+                            }
+                            FontRef::Family { name: f, weight, italic }
                         }
                     }
                 };
@@ -573,7 +623,10 @@ impl Builder {
                         scale: g.scale,
                         rotation: g.rotation,
                     }),
-                    oversample: l.oversample.unwrap_or(1.0).clamp(0.25, 8.0),
+                    oversample: match l.oversample.unwrap_or(1.0) {
+                        o if (0.25..=8.0).contains(&o) => o,
+                        o => bail!("oversample must be from 0.25 to 8, got {o}"),
+                    },
                 }))
             }
             "rect" | "ellipse" => {
@@ -607,6 +660,12 @@ impl Builder {
                 let mut params = Vec::new();
                 let defaults = l.effect.as_deref().map(crate::effects::defaults).unwrap_or_default();
                 let mut given = l.params.unwrap_or_default();
+                if let Some(e) = l.effect.as_deref() {
+                    let names: Vec<&str> = defaults.iter().map(|(n, _)| *n).collect();
+                    if let Some(bad) = given.keys().find(|k| !names.contains(&k.as_str())) {
+                        bail!("`params.{bad}` isn't a param of the {e} effect; it takes {}", names.join(", "));
+                    }
+                }
                 for (name, v) in defaults {
                     given.entry(name.to_string()).or_insert(v);
                 }
@@ -614,11 +673,7 @@ impl Builder {
                     bail!("a shader takes at most 16 params");
                 }
                 for (name, v) in given {
-                    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                        || name.starts_with(|c: char| c.is_ascii_digit())
-                    {
-                        bail!("param name `{name}` must be a WGSL identifier");
-                    }
+                    check_param_name(&name)?;
                     let pv = match &v {
                         Value::String(s) if s.starts_with('#') => ParamValue::V(
                             parse_hex(s).with_context(|| format!("param {name}"))?.map(AnimF::Const).to_vec(),
@@ -633,6 +688,13 @@ impl Builder {
                         }
                         _ => ParamValue::F(AnimF::from_value(&v).with_context(|| format!("param {name}"))?),
                     };
+                    let reads = match &pv {
+                        ParamValue::F(a) => a.reads_glyph_vars(),
+                        ParamValue::V(c) => c.iter().any(AnimF::reads_glyph_vars),
+                    };
+                    if reads {
+                        bail!("`params.{name}` reads `i` or `n`, which exist only in a text layer's `glyphs`");
+                    }
                     params.push((name, pv));
                 }
                 Kind::Shader(Box::new(ShaderSpec { code, premultiplied, params, size: l.size }))
@@ -650,6 +712,9 @@ impl Builder {
             }
             _ => unreachable!(),
         };
+        if duration <= 0.0 {
+            return Ok(None); // starts after its parent ends: never visible, though still checked above
+        }
         let id = self.next_id;
         self.next_id += 1;
         Ok(Some(Layer {
@@ -669,6 +734,47 @@ impl Builder {
             kind: k,
         }))
     }
+}
+
+/// Names a shader's code already uses, which a param can't take.
+const SHADER_NAMES: &[&str] = &[
+    "uv",
+    "px",
+    "res",
+    "size",
+    "time",
+    "t",
+    "frame",
+    "dur",
+    "u",
+    "backdrop",
+    "hash",
+    "noise",
+    "backdrop_tex",
+    "backdrop_samp",
+    "user_main",
+    "vs",
+    "fs",
+    "VOut",
+    "U",
+];
+
+fn check_param_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        || name.starts_with(|c: char| c.is_ascii_digit())
+        || name.starts_with("__")
+        || name == "_"
+    {
+        bail!("param name `{name}` must be a WGSL identifier: letters, digits and _, not starting with a digit or __");
+    }
+    if wgpu::naga::keywords::wgsl::RESERVED.contains(&name) {
+        bail!("param name `{name}` is a reserved word in WGSL; pick another name");
+    }
+    if SHADER_NAMES.contains(&name) {
+        bail!("param name `{name}` is already defined in shader code (see `yehi docs`); pick another name");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -718,6 +824,48 @@ mod tests {
             r#"{"width": 100, "height": 100, "fps": 30, "duration": 1, "layers": [{"type": "image", "src": "nope.png"}]}"#,
         );
         assert!(e.contains("file not found"), "{e}");
+    }
+
+    fn layer_err(layer: &str) -> String {
+        err(&format!(r#"{{"width": 100, "height": 100, "fps": 30, "duration": 1, "layers": [{layer}]}}"#))
+    }
+
+    #[test]
+    fn shader_params_are_checked() {
+        let e = layer_err(r#"{"type": "shader", "effect": "grain", "params": {"amout": 1}}"#);
+        assert!(e.contains("`params.amout` isn't a param of the grain effect"), "{e}");
+        let e = layer_err(r#"{"type": "shader", "code": "vec4f(1.0)", "params": {"from": 1}}"#);
+        assert!(e.contains("reserved word"), "{e}");
+        let e = layer_err(r#"{"type": "shader", "code": "vec4f(1.0)", "params": {"uv": 1}}"#);
+        assert!(e.contains("already defined"), "{e}");
+    }
+
+    #[test]
+    fn glyph_vars_only_in_glyphs() {
+        let e = layer_err(r#"{"type": "rect", "size": [10, 10], "opacity": "i / n"}"#);
+        assert!(e.contains("`opacity` reads `i` or `n`"), "{e}");
+    }
+
+    #[test]
+    fn hidden_layers_are_still_checked() {
+        let e = layer_err(r#"{"type": "group", "start": 5, "layers": [{"type": "sprite"}]}"#);
+        assert!(e.contains("unknown type `sprite`"), "{e}");
+    }
+
+    #[test]
+    fn one_json_object_only() {
+        let e = err(r#"{"width": 100, "height": 100, "fps": 30, "duration": 1} THIS IS NOT JSON"#);
+        assert!(e.contains("nothing after it"), "{e}");
+    }
+
+    #[test]
+    fn ranges_are_checked() {
+        assert!(err(r#"{"width": 100, "height": 100, "fps": 30, "duration": 1, "loudness": 5}"#).contains("loudness"));
+        assert!(err(r#"{"width": 100, "height": 100, "fps": 0, "duration": 1}"#).contains("more than 0"));
+        let e = layer_err(r#"{"type": "text", "text": "hi", "font": "f.ttf", "font_weight": 700}"#);
+        assert!(e.contains("only when `font` is a family name"), "{e}");
+        let e = layer_err(r#"{"type": "ellipse", "text": "hi"}"#);
+        assert!(e.contains("doesn't apply to an ellipse layer"), "{e}");
     }
 
     #[test]
