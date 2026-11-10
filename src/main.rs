@@ -48,6 +48,9 @@ enum Cmd {
         /// Target bitrate such as 12M, overriding --quality's.
         #[arg(long)]
         bitrate: Option<String>,
+        /// Leave out the audio.
+        #[arg(long)]
+        no_audio: bool,
         /// Render without encoding, to measure rendering alone.
         #[arg(long, hide = true)]
         benchmark: bool,
@@ -127,7 +130,7 @@ fn run() -> Result<()> {
             );
             Ok(())
         }
-        Cmd::Video { spec, out, codec, encoder, quality, bitrate, benchmark } => {
+        Cmd::Video { spec, out, codec, encoder, quality, bitrate, no_audio, benchmark } => {
             let t0 = Instant::now();
             let comp = spec::load(&spec)?;
             if comp.width % 8 != 0 {
@@ -136,6 +139,7 @@ fn run() -> Result<()> {
             let enc = encode::pick(codec, &encoder)?;
             let gpu = Gpu::new()?;
             let mut scene = Scene::load(&comp, gpu)?;
+            let audio = if no_audio { vec![] } else { comp.audio.clone() };
             let loaded = t0.elapsed().as_secs_f64();
             let opts = Opts { quality, bitrate };
             if let Some(dir) = out.parent()
@@ -150,7 +154,7 @@ fn run() -> Result<()> {
                     .stderr(std::process::Stdio::piped())
                     .spawn()?
             } else {
-                encode::spawn(&out, &comp, &enc, &opts)?
+                encode::spawn(&out, &comp, &audio, &enc, &opts)?
             };
             let t1 = Instant::now();
             let n = comp.frames;

@@ -9,11 +9,11 @@ yehi still  video.json 1.5 4 -o stills/      # full-size PNGs at those times
 yehi video  video.json -o out.mp4            # the video
 ```
 
-`yehi video` options: `--codec h264|hevc|prores` (h264), `--quality draft|standard|high` (standard), `--encoder auto|hardware|software|<ffmpeg encoder>` (auto picks the fastest that works here), `--bitrate 12M`.
+`yehi video` options: `--codec h264|hevc|prores` (h264), `--quality draft|standard|high` (standard), `--encoder auto|hardware|software|<ffmpeg encoder>` (auto picks the fastest that works here), `--bitrate 12M`, `--no-audio`.
 
 ## Workflow
 
-1. Write the spec. Paths (images, fonts, masks) are relative to the spec file.
+1. Write the spec. Paths (images, fonts, audio, masks) are relative to the spec file.
 2. `yehi check` until it passes. Errors name the exact field: `layers[2].layers[0].opacity: unknown function 'easeOut'`.
 3. `yehi sheet` (or `yehi still` at the moments that matter) and look at the frames. Rendering a sheet takes well under a second.
 4. `yehi video`.
@@ -24,6 +24,8 @@ yehi video  video.json -o out.mp4            # the video
 {
   "width": 1080, "height": 1920, "fps": 30, "duration": 8,
   "background": "#101014",
+  "audio": [{ "src": "music.mp3", "start": 0, "volume": 0.8, "fade_out": 1.5 }],
+  "loudness": -14,
   "layers": [ ... ]
 }
 ```
@@ -33,6 +35,8 @@ yehi video  video.json -o out.mp4            # the video
 | `width`, `height` | Even pixel sizes. Video output also needs `width` to be a multiple of 8 (1080, 1920, 720, 1280 are). |
 | `fps`, `duration` | Frames per second and length in seconds. |
 | `background` | Color under everything. Default black. |
+| `audio` | Sound placed on the timeline: `src`, `start` (s), `trim` (s skipped from the source), `duration`, `volume` (1 = unchanged), `fade_in`, `fade_out` (s), `loop`. |
+| `loudness` | Normalize the mix to this integrated loudness in LUFS (social platforms target about -14). |
 | `layers` | Drawn first to last; later layers cover earlier ones. |
 
 ## Values that animate
