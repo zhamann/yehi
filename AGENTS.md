@@ -11,6 +11,7 @@ A CLI that renders video from a JSON spec as fast as the machine allows: GPU com
 - `src/text.rs`: font loading, shaping, the glyph atlas. `src/video.rs`: video-layer decoding. `src/encode.rs`: encoder choice and the ffmpeg command. `src/sheet.rs`: contact sheets.
 - `docs/spec.md`: the spec reference, compiled into the binary as `yehi docs`.
 - `skills/yehi/SKILL.md`: the agent skill.
+- `npm/`: the npm distribution. `yehi` is a Node launcher that runs the binary from a `yehi-<platform>` package (npm installs only the one matching the machine); `stage.mjs` lays the packages out from built binaries, and `.github/workflows/release.yml` builds and publishes them on a version tag.
 
 ## Rules
 

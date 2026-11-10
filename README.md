@@ -23,13 +23,15 @@ The compositor alone runs at about 600 frames a second at 1080x1920; the rest is
 
 ## Install
 
-yehi needs [ffmpeg](https://ffmpeg.org) on the PATH (`brew install ffmpeg`, `apt install ffmpeg`, `winget install ffmpeg`), or `YEHI_FFMPEG` and `YEHI_FFPROBE` set to its programs. Build it with [Rust](https://rustup.rs):
+Run it with npx, which downloads the prebuilt binary for the machine on first use (macOS on Apple silicon or Intel, Linux x64 or arm64 with glibc, Windows x64):
 
 ```bash
-cargo install --path .
+npx yehi video video.json -o out.mp4
 ```
 
-On Linux without a GPU, also install a software Vulkan driver (`apt install mesa-vulkan-drivers`). The Docker image includes both:
+Or install it once with `npm install -g yehi`, or build it from source with [Rust](https://rustup.rs) (`cargo install --path .`).
+
+yehi needs [ffmpeg](https://ffmpeg.org) on the PATH (`brew install ffmpeg`, `apt install ffmpeg`, `winget install ffmpeg`), or `YEHI_FFMPEG` and `YEHI_FFPROBE` set to its programs. On Linux without a GPU, also install a software Vulkan driver (`apt install mesa-vulkan-drivers`). The Docker image includes both:
 
 ```bash
 docker build -t yehi .
@@ -88,6 +90,17 @@ The CLI is built to be driven by an agent:
 - **Everything overlaps.** Four frames are in flight: while the GPU draws one, earlier ones are copied back and piped to ffmpeg on another thread, which encodes with VideoToolbox on macOS, NVENC on NVIDIA, or x264/x265 elsewhere.
 
 Because a frame depends only on its time, a render can be split across processes or machines and the parts joined; `--start`/`--end` is the building block for that.
+
+## Releasing
+
+Set `version` in `Cargo.toml` and merge that change, then push a matching tag from `main`:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow checks the tag matches `Cargo.toml`, runs the CI checks, builds the binary on each platform, publishes `yehi-<platform>` and then `yehi` to npm with provenance, and attaches the binaries to a GitHub release. A prerelease tag like `v0.2.0-rc.1` publishes under npm's `next` tag, so `latest` stays on the newest stable release. It needs an `NPM_TOKEN` secret with permission to publish those packages.
 
 ## Development
 
