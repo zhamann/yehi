@@ -17,6 +17,7 @@ A real 64-second 1080x1920 social video (14 scenes of engraved plates, kinetic t
 | `yehi video --codec hevc` | 5.3 s |
 | `yehi video --quality draft` | 3.4 s |
 | `yehi sheet` (12 labeled frames) or `yehi still` | under 1 s |
+| Linux container, no GPU (software Vulkan), draft | 53 s |
 
 The compositor alone runs at about 600 frames a second at 1080x1920; the rest is the encoder.
 
@@ -28,7 +29,12 @@ Requires [ffmpeg](https://ffmpeg.org) on the PATH. Build it with [Rust](https://
 cargo install --path .
 ```
 
-On Linux without a GPU, install a software Vulkan driver (`apt install mesa-vulkan-drivers`).
+On Linux without a GPU, install a software Vulkan driver (`apt install mesa-vulkan-drivers`). Or use the Docker image, which includes ffmpeg and the driver:
+
+```bash
+docker build -t yehi .
+docker run --rm -v "$PWD:/work" yehi video video.json -o out.mp4
+```
 
 `yehi info` shows which GPU and encoders it will use.
 
