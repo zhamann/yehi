@@ -1,0 +1,12 @@
+[package]
+name = "yehi"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Fast GPU video rendering from a JSON spec, built for AI agents"
+readme = "README.md"
+keywords = ["video", "render", "gpu", "motion-graphics", "agents"]
+categories = ["multimedia::video", "command-line-utilities", "rendering"]
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
