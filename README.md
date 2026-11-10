@@ -78,6 +78,8 @@ The CLI is built to be driven by an agent:
 - `yehi sheet` puts a dozen labeled frames on one image in well under a second, so checking the work is cheap enough to do every time.
 - Frames are independent, so `--start`/`--end` render any part on its own.
 
+[skills/yehi/SKILL.md](skills/yehi/SKILL.md) is a skill for Claude Code and other agents that read skills: copy or link it into `~/.claude/skills/yehi/` to make `yehi` available in every project.
+
 ## How it works
 
 - **Load once.** The spec is parsed and validated, then images and masks are decoded and mipmapped in parallel, text is shaped (swash) into a shared glyph atlas, and shader layers are compiled (naga checks them first, so a mistake is an error message, not a crash).
