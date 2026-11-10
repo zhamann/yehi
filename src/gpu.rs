@@ -127,7 +127,10 @@ impl Gpu {
             max_buffer_size: al.max_buffer_size,
             max_storage_buffer_binding_size: al.max_storage_buffer_binding_size,
             ..wgpu::Limits::downlevel_defaults()
-        };
+        }
+        // old software drivers (Mesa 21's lavapipe) report less than the downlevel defaults in places yehi
+        // doesn't need them
+        .or_worse_values_from(&al);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("yehi"),
             required_features: wgpu::Features::empty(),
