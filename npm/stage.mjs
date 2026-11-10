@@ -81,7 +81,7 @@ for (const [platform, p] of Object.entries(PLATFORMS)) {
   };
   if (main.license) pkg.license = main.license;
   write(path.join(dir, "package.json"), pkg);
-  write(path.join(dir, "README.md"), `# yehi-${platform}\n\nThe [yehi](https://www.npmjs.com/package/yehi) binary for ${p.label}. Install \`yehi\` instead; npm picks this package for you.\n`);
+  write(path.join(dir, "README.md"), `# yehi-${platform}\n\nThe [yehi](https://www.npmjs.com/package/${main.name}) binary for ${p.label}. Install \`${main.name}\` instead; npm picks this package for you.\n`);
   fs.copyFileSync(path.join(root, "LICENSE"), path.join(dir, "LICENSE"));
   if (notices) fs.copyFileSync(notices, path.join(dir, "THIRD-PARTY-LICENSES.txt"));
   fs.mkdirSync(path.join(dir, "bin"), { recursive: true });

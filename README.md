@@ -25,10 +25,10 @@ The same video took 115 s with the Python and numpy renderer yehi replaced. The 
 Run it with npx, which downloads the prebuilt binary for the machine on first use (macOS 11 or later on Apple silicon or Intel, Linux x64 or arm64 with glibc 2.17 or later, Windows x64):
 
 ```bash
-npx yehi video video.json -o out.mp4
+npx @zhamann/yehi video video.json -o out.mp4
 ```
 
-Or install it once with `npm install -g yehi`, download a binary from the [releases](https://github.com/zhamann/yehi/releases), or build it from source with [Rust](https://rustup.rs) 1.90 or later (`cargo install --git https://github.com/zhamann/yehi`).
+Or install it once with `npm install -g @zhamann/yehi` (which puts `yehi` on the PATH), download a binary from the [releases](https://github.com/zhamann/yehi/releases), or build it from source with [Rust](https://rustup.rs) 1.90 or later (`cargo install --git https://github.com/zhamann/yehi`).
 
 yehi needs [ffmpeg](https://ffmpeg.org) on the PATH (`brew install ffmpeg`, `apt install ffmpeg`, `winget install ffmpeg`), or `YEHI_FFMPEG` and `YEHI_FFPROBE` set to its programs. On Linux without a GPU, also install a software Vulkan driver (`apt install mesa-vulkan-drivers` or `dnf install mesa-vulkan-drivers`). The Docker image includes both:
 

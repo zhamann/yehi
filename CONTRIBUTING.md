@@ -34,6 +34,6 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The release workflow checks the tag matches `Cargo.toml` and is in `main`, runs the CI checks, builds the binary for each platform (Linux ones against glibc 2.17), publishes `yehi-<platform>` and then `yehi` to npm with provenance, and attaches the binaries, their licenses, and `SHA256SUMS` to a GitHub release. A prerelease tag like `v0.2.0-rc.1` publishes under npm's `next` tag, so `latest` stays on the newest stable release.
+The release workflow checks the tag matches `Cargo.toml` and is in `main`, runs the CI checks, builds the binary for each platform (Linux ones against glibc 2.17), publishes `yehi-<platform>` and then the launcher, `@zhamann/yehi`, to npm with provenance, and attaches the binaries, their licenses, and `SHA256SUMS` to a GitHub release. A prerelease tag like `v0.2.0-rc.1` publishes under npm's `next` tag, so `latest` stays on the newest stable release.
 
 Publishing uses npm trusted publishing for packages that have it set up (each package's settings on npmjs.com, with this repository and `release.yml`), and the `NPM_TOKEN` secret otherwise. A failed release can be re-run: versions already on npm are skipped.

@@ -7,7 +7,7 @@ description: Render videos fast from a JSON spec with the `yehi` CLI (GPU compos
 
 `yehi` turns one JSON file (canvas, timeline, layers) into a video. Frames are composited on the GPU and encoded with the fastest encoder on the machine, so a minute of 1080x1920 video takes seconds and a still takes a fraction of one.
 
-Run `yehi docs` first and follow it: it's the complete spec, with patterns for scenes, slot rises, write-ons, camera shake, fades and shaders. If `yehi` isn't on the PATH, run it as `npx yehi` (it downloads the prebuilt binary on first use). It needs ffmpeg; if that's missing, ask before installing it.
+Run `yehi docs` first and follow it: it's the complete spec, with patterns for scenes, slot rises, write-ons, camera shake, fades and shaders. If `yehi` isn't on the PATH, run it as `npx @zhamann/yehi` (it downloads the prebuilt binary on first use). It needs ffmpeg; if that's missing, ask before installing it.
 
 ## Work loop
 
