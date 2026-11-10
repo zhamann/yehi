@@ -16,11 +16,11 @@ pub struct Info {
 }
 
 pub fn probe(src: &PathBuf) -> Result<Info> {
-    let out = Command::new("ffprobe")
+    let out = Command::new(crate::encode::tool("ffprobe"))
         .args(["-v", "error", "-show_entries", "stream=codec_type,width,height,pix_fmt:format=duration", "-of", "json"])
         .arg(src)
         .output()
-        .context("can't run ffprobe; install ffmpeg (it includes ffprobe)")?;
+        .context(crate::encode::MISSING)?;
     if !out.status.success() {
         bail!("ffprobe can't read {}: {}", src.display(), String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -87,7 +87,7 @@ impl Decoder {
         if self.alpha {
             vf += ",premultiply=inplace=1";
         }
-        let mut child = Command::new("ffmpeg")
+        let mut child = Command::new(crate::encode::tool("ffmpeg"))
             .args(["-v", "error", "-nostdin", "-ss"])
             .arg(format!("{:.6}", self.trim + at as f64 / self.fps))
             .arg("-i")
@@ -96,7 +96,7 @@ impl Decoder {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .context("can't run ffmpeg to decode a video layer")?;
+            .context(crate::encode::MISSING)?;
         let mut out = child.stdout.take().unwrap();
         let size = (self.w * self.h * 4) as usize;
         let (tx, rx) = sync_channel(6);
