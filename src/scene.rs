@@ -3,8 +3,9 @@
 use crate::anim::AnimF;
 use crate::expr::Vars;
 use crate::gpu::{Gpu, Inst, Op, READS_BACKDROP, SHADER_UNIFORM_SIZE, WHITE};
-use crate::spec::{Blend, Comp, Fit, Kind, Layer, ParamValue};
+use crate::spec::{Audio, Blend, Comp, Fit, Kind, Layer, ParamValue};
 use crate::text::{self, Atlas, Fonts, TextLayout};
+use crate::video::{self, Decoder};
 use anyhow::{Context, Result, anyhow, bail};
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -58,6 +59,7 @@ impl Aff {
 
 enum Res {
     Image { tex: usize, w: f64, h: f64 },
+    Video { tex: usize, w: f64, h: f64, dec: usize },
     Text { layout: TextLayout, fit: f64 },
     Shader { prog: usize },
     Isolated { target: usize, w: f64, h: f64 },
@@ -93,7 +95,10 @@ pub struct Scene<'a> {
     masks: HashMap<PathBuf, usize>,
     atlas: Atlas,
     pages: Vec<usize>,
+    decoders: Vec<Decoder>,
     pub main: usize,
+    /// Audio from video layers, placed on the composition's timeline.
+    pub video_audio: Vec<Audio>,
     uni_stride: usize,
 }
 
@@ -250,13 +255,15 @@ impl<'a> Scene<'a> {
             masks: HashMap::new(),
             atlas: Atlas::new(),
             pages: vec![],
+            decoders: vec![],
             main,
+            video_audio: vec![],
             uni_stride,
         };
         let mut fonts = Fonts::new();
         let mut shaper = swash::shape::ShapeContext::new();
         let mut loader = Loader { images: &images, fonts: &mut fonts, shaper: &mut shaper };
-        scene.load_layers(&comp.layers, [comp.width as f64, comp.height as f64], main, &mut loader)?;
+        scene.load_layers(&comp.layers, [comp.width as f64, comp.height as f64], main, 0.0, &mut loader)?;
         let pages = std::mem::take(&mut scene.atlas.pages);
         for p in &pages {
             let t = scene.gpu.texture_r8(text::PAGE, text::PAGE, p);
@@ -265,14 +272,21 @@ impl<'a> Scene<'a> {
         Ok(scene)
     }
 
-    fn load_layers(&mut self, layers: &[Layer], parent: [f64; 2], target: usize, ld: &mut Loader) -> Result<()> {
+    fn load_layers(
+        &mut self,
+        layers: &[Layer],
+        parent: [f64; 2],
+        target: usize,
+        offset: f64,
+        ld: &mut Loader,
+    ) -> Result<()> {
         for l in layers {
-            self.load_layer(l, parent, target, ld).with_context(|| l.path.clone())?;
+            self.load_layer(l, parent, target, offset, ld).with_context(|| l.path.clone())?;
         }
         Ok(())
     }
 
-    fn load_layer(&mut self, l: &Layer, parent: [f64; 2], target: usize, ld: &mut Loader) -> Result<()> {
+    fn load_layer(&mut self, l: &Layer, parent: [f64; 2], target: usize, offset: f64, ld: &mut Loader) -> Result<()> {
         if let Some(m) = &l.mask {
             let (tex, _, _) = ld.images[&m.src];
             self.masks.insert(m.src.clone(), tex);
@@ -281,6 +295,27 @@ impl<'a> Scene<'a> {
             Kind::Image { src, .. } => {
                 let (tex, w, h) = ld.images[src];
                 Res::Image { tex, w: w as f64, h: h as f64 }
+            }
+            Kind::Video { src, trim, looped, volume, muted, .. } => {
+                let info = video::probe(src)?;
+                let (w, h) = (info.width.min(self.gpu.max_texture), info.height.min(self.gpu.max_texture));
+                let tex = self.gpu.texture_rgba8(w, h, &[vec![0; (w * h * 4) as usize]], "video");
+                let dec = Decoder::new(src.clone(), *trim, self.comp.fps, w, h, *looped, &info);
+                self.decoders.push(dec);
+                if info.has_audio && !*muted && *volume > 0.0 {
+                    let play = if *looped { l.duration } else { l.duration.min((info.duration - trim).max(0.0)) };
+                    self.video_audio.push(Audio {
+                        src: src.clone(),
+                        start: offset + l.start,
+                        trim: *trim,
+                        duration: Some(play),
+                        volume: *volume,
+                        fade_in: 0.0,
+                        fade_out: 0.0,
+                        looped: *looped,
+                    });
+                }
+                Res::Video { tex, w: w as f64, h: h as f64, dec: self.decoders.len() - 1 }
             }
             Kind::Text(t) => {
                 let font = ld.fonts.load(&t.font)?;
@@ -319,10 +354,10 @@ impl<'a> Scene<'a> {
                 if *isolate {
                     let (w, h) = (size[0].round().max(1.0) as u32, size[1].round().max(1.0) as u32);
                     let t = self.gpu.target(w, h, target_needs_backdrop(layers))?;
-                    self.load_layers(layers, size, t, ld)?;
+                    self.load_layers(layers, size, t, offset + l.start, ld)?;
                     Res::Isolated { target: t, w: w as f64, h: h as f64 }
                 } else {
-                    self.load_layers(layers, size, target, ld)?;
+                    self.load_layers(layers, size, target, offset + l.start, ld)?;
                     Res::None
                 }
             }
@@ -332,7 +367,7 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    /// Everything the GPU needs to draw one frame.
+    /// Everything the GPU needs to draw one frame. Video frames are uploaded here.
     pub fn frame(&mut self, frame: u32) -> Result<Frame> {
         let time = frame as f64 / self.comp.fps;
         let mut f = Frame { inst: Vec::with_capacity(256), uniforms: Vec::new(), ops: Vec::new() };
@@ -390,7 +425,8 @@ impl<'a> Scene<'a> {
         let mut extra_scale = 1.0;
         let mut text_track = 0.0;
         let size: [f64; 2] = match (&l.kind, res) {
-            (Kind::Image { size, .. }, Res::Image { w, h, .. }) => size.as_ref().map_or([*w, *h], |s| s.eval(&v)),
+            (Kind::Image { size, .. }, Res::Image { w, h, .. })
+            | (Kind::Video { size, .. }, Res::Video { w, h, .. }) => size.as_ref().map_or([*w, *h], |s| s.eval(&v)),
             (Kind::Text(ts), Res::Text { layout, fit }) => {
                 extra_scale = *fit;
                 text_track = ts.tracking.as_ref().map_or(0.0, |a| a.eval(&v)) * ts.font_size;
@@ -452,6 +488,15 @@ impl<'a> Scene<'a> {
                 let tint = tint.as_ref().map_or([1.0; 4], |c| c.eval(&v));
                 let tex = *tex;
                 let (iw, ih) = (*w, *h);
+                push_fitted(f, ops, &q, tex, *fit, size, iw, ih, tint);
+            }
+            (Kind::Video { fit, tint, .. }, Res::Video { tex, w, h, dec }) => {
+                let tint = tint.as_ref().map_or([1.0; 4], |c| c.eval(&v));
+                let (tex, iw, ih, dec) = (*tex, *w, *h, *dec);
+                let idx = (t * self.comp.fps + 1e-6).floor() as i64;
+                if let Some(px) = self.decoders[dec].frame(idx)? {
+                    self.gpu.write_rgba8(tex, &px);
+                }
                 push_fitted(f, ops, &q, tex, *fit, size, iw, ih, tint);
             }
             (Kind::Text(ts), Res::Text { layout, .. }) => {

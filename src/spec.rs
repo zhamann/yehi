@@ -71,10 +71,15 @@ struct LayerJson {
     reveal: Option<RevealJson>,
     mask: Option<MaskJson>,
     size: Option<AnimV2>,
-    // image
+    // image / video
     src: Option<String>,
     fit: Option<String>,
     tint: Option<AnimColor>,
+    trim: Option<f64>,
+    #[serde(rename = "loop")]
+    looped: Option<bool>,
+    volume: Option<f64>,
+    muted: Option<bool>,
     // text
     text: Option<String>,
     font: Option<String>,
@@ -224,12 +229,38 @@ pub struct Layer {
 }
 
 pub enum Kind {
-    Image { src: PathBuf, size: Option<AnimV2>, fit: Fit, tint: Option<AnimColor> },
+    Image {
+        src: PathBuf,
+        size: Option<AnimV2>,
+        fit: Fit,
+        tint: Option<AnimColor>,
+    },
+    Video {
+        src: PathBuf,
+        size: Option<AnimV2>,
+        fit: Fit,
+        tint: Option<AnimColor>,
+        trim: f64,
+        looped: bool,
+        volume: f64,
+        muted: bool,
+    },
     Text(Box<TextSpec>),
-    Rect { size: AnimV2, color: AnimColor, radius: Option<AnimF> },
-    Ellipse { size: AnimV2, color: AnimColor },
+    Rect {
+        size: AnimV2,
+        color: AnimColor,
+        radius: Option<AnimF>,
+    },
+    Ellipse {
+        size: AnimV2,
+        color: AnimColor,
+    },
     Shader(Box<ShaderSpec>),
-    Group { layers: Vec<Layer>, size: Option<AnimV2>, isolate: bool },
+    Group {
+        layers: Vec<Layer>,
+        size: Option<AnimV2>,
+        isolate: bool,
+    },
 }
 
 pub struct TextSpec {
@@ -343,6 +374,7 @@ const COMMON: &[&str] = &[
 fn allowed(kind: &str) -> Option<&'static [&'static str]> {
     Some(match kind {
         "image" => &["src", "size", "fit", "tint"],
+        "video" => &["src", "size", "fit", "tint", "trim", "loop", "volume", "muted"],
         "text" => &[
             "text",
             "font",
@@ -370,8 +402,8 @@ impl LayerJson {
     fn present(&self) -> Vec<&'static str> {
         let mut v = Vec::new();
         macro_rules! chk { ($($f:ident => $n:literal),*) => { $( if self.$f.is_some() { v.push($n); } )* } }
-        chk!(src => "src", size => "size", fit => "fit", tint => "tint",
-             text => "text", font => "font", font_size => "font_size",
+        chk!(src => "src", size => "size", fit => "fit", tint => "tint", trim => "trim", looped => "loop",
+             volume => "volume", muted => "muted", text => "text", font => "font", font_size => "font_size",
              font_weight => "font_weight", font_style => "font_style", color => "color", tracking => "tracking",
              line_height => "line_height", align => "align", max_width => "max_width", text_box => "box",
              glyphs => "glyphs", oversample => "oversample", radius => "radius", code => "code", effect => "effect",
@@ -405,7 +437,7 @@ impl Builder {
     fn layer(&mut self, l: LayerJson, at: &str, parent_dur: f64) -> Result<Option<Layer>> {
         let kind = l.kind.as_str();
         let ok = allowed(kind)
-            .ok_or_else(|| anyhow!("unknown type `{kind}`; use image, text, rect, ellipse, shader or group"))?;
+            .ok_or_else(|| anyhow!("unknown type `{kind}`; use image, video, text, rect, ellipse, shader or group"))?;
         for f in l.present() {
             if !ok.contains(&f) && !COMMON.contains(&f) {
                 bail!("`{f}` doesn't apply to a {kind} layer; a {kind} layer takes {}", ok.join(", "));
@@ -479,6 +511,19 @@ impl Builder {
                     size: l.size,
                     fit: fit(l.fit.as_deref())?,
                     tint: l.tint,
+                }
+            }
+            "video" => {
+                let src = need(l.src.as_deref(), "src")?;
+                Kind::Video {
+                    src: self.asset(&src, &format!("{at}.src")),
+                    size: l.size,
+                    fit: fit(l.fit.as_deref())?,
+                    tint: l.tint,
+                    trim: l.trim.unwrap_or(0.0),
+                    looped: l.looped.unwrap_or(false),
+                    volume: l.volume.unwrap_or(1.0),
+                    muted: l.muted.unwrap_or(false),
                 }
             }
             "text" => {

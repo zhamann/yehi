@@ -13,7 +13,7 @@ yehi video  video.json -o out.mp4            # the video
 
 ## Workflow
 
-1. Write the spec. Paths (images, fonts, audio, masks) are relative to the spec file.
+1. Write the spec. Paths (images, fonts, video, audio, masks) are relative to the spec file.
 2. `yehi check` until it passes. Errors name the exact field: `layers[2].layers[0].opacity: unknown function 'easeOut'`.
 3. `yehi sheet` (or `yehi still` at the moments that matter) and look at the frames. Rendering a sheet takes well under a second.
 4. `yehi video`.
@@ -61,7 +61,7 @@ Two-part values (`position`, `anchor`, `scale`, `size`) are `[x, y]` with each p
 
 | Field | Default | Meaning |
 |---|---|---|
-| `type` | | `image`, `text`, `rect`, `ellipse`, `shader` or `group` |
+| `type` | | `image`, `video`, `text`, `rect`, `ellipse`, `shader` or `group` |
 | `name` | | Shown in error messages. |
 | `start` | 0 | Seconds after its parent starts. |
 | `duration` or `end` | to the parent's end | When it disappears. A layer is visible while `start <= t < start + duration`. |
@@ -84,6 +84,10 @@ Two-part values (`position`, `anchor`, `scale`, `size`) are `[x, y]` with each p
 `src` (PNG, JPEG or WebP), `size` (*animatable* `[w, h]`; default the image's own pixels), `fit` (`fill` stretches to `size`, `contain` fits inside it, `cover` fills it and crops; default `fill`), `tint` (*animatable* color multiplied in).
 
 Images are drawn with mipmaps, so heavy downscaling stays smooth. Make images at least as large as they'll appear.
+
+### video
+
+`src`, `size`, `fit`, `tint` as for images, plus `trim` (seconds skipped from the source), `loop`, `volume` (default 1), `muted`. Frame `k` of the layer shows source time `trim + k / fps`. A clip that ends holds its last frame. Its audio joins the mix at the layer's place on the timeline unless `muted`.
 
 ### text
 

@@ -7,6 +7,7 @@ mod scene;
 mod sheet;
 mod spec;
 mod text;
+mod video;
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
@@ -139,7 +140,10 @@ fn run() -> Result<()> {
             let enc = encode::pick(codec, &encoder)?;
             let gpu = Gpu::new()?;
             let mut scene = Scene::load(&comp, gpu)?;
-            let audio = if no_audio { vec![] } else { comp.audio.clone() };
+            let mut audio = if no_audio { vec![] } else { comp.audio.clone() };
+            if !no_audio {
+                audio.extend(scene.video_audio.iter().cloned());
+            }
             let loaded = t0.elapsed().as_secs_f64();
             let opts = Opts { quality, bitrate };
             if let Some(dir) = out.parent()
