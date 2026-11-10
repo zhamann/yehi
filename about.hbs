@@ -1,0 +1,15 @@
+Third-party licenses
+
+yehi is MIT-licensed (see LICENSE). Its binaries include the Rust crates below, under these licenses.
+{{#each licenses}}
+
+================================================================================
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+  - {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+{{{text}}}
+{{/each}}
