@@ -15,7 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg mesa-vulkan-drivers libvulkan1
+      # The Ubuntu mirror sometimes throttles package downloads to about 100 kB/s, which has stretched this
+      # 20-second install to 18 minutes. The downloaded packages are kept between runs, so apt only fetches
+      # the ones that changed; the key follows the runner image, so the kept set is refreshed with it.
+      - id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/apt-archives
+          key: apt-${{ steps.image.outputs.version }}
+          restore-keys: apt-
+      - run: |
+          mkdir -p /tmp/apt-archives
+          sudo apt-get update
+          sudo apt-get install -y -o Dir::Cache::Archives=/tmp/apt-archives/ ffmpeg mesa-vulkan-drivers libvulkan1
+          # drop superseded packages and apt's own lock and download folder, leaving only what the cache should keep
+          sudo apt-get autoclean -o Dir::Cache::Archives=/tmp/apt-archives/
+          sudo rm -rf /tmp/apt-archives/lock /tmp/apt-archives/partial
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
