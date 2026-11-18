@@ -7,6 +7,12 @@ on:
   # The release workflow runs these checks before publishing.
   workflow_call:
 
+# A newer push to a pull request cancels its older run. Every other run (main,
+# and calls from the release workflow) gets a group of its own, so it always finishes.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
